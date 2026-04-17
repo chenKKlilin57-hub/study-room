@@ -24,6 +24,16 @@ export class Timer {
     return this.selectedDuration;
   }
 
+  getElapsedSeconds() {
+    if (this.selectedDuration === 0) {
+      // 专注计时模式：remaining 就是已用时间
+      return this.remaining;
+    } else {
+      // 倒计时模式：已用时间 = 总时长 - 剩余时间
+      return this.selectedDuration - this.remaining;
+    }
+  }
+
   getTimerMode() {
     return this.timerMode;
   }

@@ -75,6 +75,7 @@ const el = {
   startBtn: $("startBtn"),
   pauseBtn: $("pauseBtn"),
   resetBtn: $("resetBtn"),
+  finishFocusBtn: $("finishFocusBtn"),
   saveManualBtn: $("saveManualBtn"),
   immersiveBtn: $("immersiveBtn"),
   exitImmersiveBtn: $("exitImmersiveBtn"),
@@ -659,10 +660,15 @@ function startTimer() {
   const onComplete = async (minutes) => {
     await saveStudySession(minutes);
   };
-  
+
   const started = timer.start(onTick, onComplete);
   if (started) {
     el.statusText.textContent = "专注正在进行...";
+
+    // 如果是专注计时模式，显示完成按钮
+    if (timer.isFreeMode) {
+      el.finishFocusBtn.style.display = "";
+    }
   }
 }
 
@@ -685,6 +691,7 @@ function resetTimer() {
   timer.reset(true);
   updateTimer();
   el.statusText.textContent = "现在只做这一件事。";
+  el.finishFocusBtn.style.display = "none";
 }
 
 // 标签页切换
@@ -721,6 +728,7 @@ function bindCommon() {
     document.getElementById("modeText").textContent = "当前专注：" + minutes + "分钟";
     el.saveManualBtn.textContent = "手动记 " + minutes + " 分钟";
     el.saveManualBtn.style.display = ""; // 恢复显示手动记录按钮
+    el.finishFocusBtn.style.display = "none"; // 隐藏完成专注按钮
   }));
 
   // 主题切换
@@ -788,6 +796,23 @@ function bindCommon() {
     timer.setDuration(0); // 0 表示无限制正计时模式
     updateTimer();
     document.getElementById("modeText").textContent = "专注计时模式（无时间限制）";
+  });
+
+  // 完成专注按钮
+  el.finishFocusBtn.addEventListener("click", async () => {
+    if (!timer.isRunning()) return;
+
+    const elapsed = timer.getElapsedSeconds();
+    const minutes = Math.floor(elapsed / 60);
+
+    if (minutes > 0) {
+      timer.pause();
+      await saveStudySession(minutes);
+      showUndoToast(minutes);
+      timer.reset();
+      updateTimer();
+      el.finishFocusBtn.style.display = "none";
+    }
   });
 
   // 任务优先级样式
