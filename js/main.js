@@ -766,10 +766,8 @@ async function pauseTimer() {
 
     // 如果是专注计时模式，暂停时保存记录
     if (timer.isFreeMode && timer.elapsedInFreeMode > 0) {
-      const minutes = Math.floor(timer.elapsedInFreeMode / 60);
-      if (minutes > 0) {
-        showUndoToast(minutes);
-      }
+      const minutes = Math.max(1, Math.floor(timer.elapsedInFreeMode / 60)); // 至少 1 分钟
+      showUndoToast(minutes);
     }
   }
 }
