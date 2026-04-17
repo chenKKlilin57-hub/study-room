@@ -890,11 +890,10 @@ function bindCommon() {
     if (!timer.isRunning()) return;
 
     const elapsed = timer.getElapsedSeconds();
-    const minutes = Math.floor(elapsed / 60);
+    const minutes = Math.max(1, Math.floor(elapsed / 60)); // 至少 1 分钟
 
-    if (minutes < 1) {
-      showMessage("专注时间太短，至少需要 1 分钟");
-      return;
+    if (elapsed < 60) {
+      showMessage("专注时间不足 1 分钟，将按 1 分钟记录");
     }
 
     timer.pause();
