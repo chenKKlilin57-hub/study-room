@@ -717,6 +717,7 @@ function bindCommon() {
     const minutes = Math.floor(seconds / 60);
     document.getElementById("modeText").textContent = "当前专注：" + minutes + "分钟";
     el.saveManualBtn.textContent = "手动记 " + minutes + " 分钟";
+    el.saveManualBtn.style.display = ""; // 恢复显示手动记录按钮
   }));
 
   // 主题切换
