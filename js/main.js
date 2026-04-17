@@ -1,0 +1,1093 @@
+// 主应用入口文件
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SUPABASE_CONFIG, APP_CONFIG } from './config.js';
+import { Auth } from './auth.js';
+import { Timer } from './timer.js';
+import { TaskManager } from './tasks.js';
+import { Heatmap } from './heatmap.js';
+
+// 初始化 Supabase
+const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+
+// 初始化模块
+const auth = new Auth(supabase);
+const timer = new Timer(supabase, auth);
+const taskManager = new TaskManager(supabase, auth);
+const heatmap = new Heatmap(supabase, auth);
+
+// 应用状态
+let appReady = false;
+let selectedTaskDate = null;
+let currentRankType = "daily";
+let dailyGoal = 240;
+let currentTodayMinutes = 0;
+let undoTimer = null;
+
+// DOM 元素选择器
+const $ = (id) => document.getElementById(id);
+
+// 工具函数
+const loadJSON = (k, f) => {
+  try {
+    const raw = localStorage.getItem(k);
+    return raw ? JSON.parse(raw) : f;
+  } catch {
+    return f;
+  }
+};
+
+const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const showMessage = (m) => alert(m);
+const esc = (s) => String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+
+const formatMinutes = (min) => {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+};
+
+const getLocalDateISO = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+// DOM 元素引用
+const el = {
+  userChip: $("userChip"),
+  themeBtn: $("themeBtn"),
+  fullBtn: $("fullBtn"),
+  logoutBtn: $("logoutBtn"),
+  appStatus: $("appStatus"),
+  authView: $("authView"),
+  studyView: $("studyView"),
+  loginEmail: $("loginEmail"),
+  loginPassword: $("loginPassword"),
+  loginBtn: $("loginBtn"),
+  signupUsername: $("signupUsername"),
+  signupEmail: $("signupEmail"),
+  signupPassword: $("signupPassword"),
+  signupBtn: $("signupBtn"),
+  timer: $("timer"),
+  statusText: $("statusText"),
+  startBtn: $("startBtn"),
+  pauseBtn: $("pauseBtn"),
+  resetBtn: $("resetBtn"),
+  saveManualBtn: $("saveManualBtn"),
+  immersiveBtn: $("immersiveBtn"),
+  exitImmersiveBtn: $("exitImmersiveBtn"),
+  todayMinutes: $("todayMinutes"),
+  totalHours: $("totalHours"),
+  sessionCount: $("sessionCount"),
+  editGoalBtn: $("editGoalBtn"),
+  taskDatePicker: $("taskDatePicker"),
+  goYesterdayBtn: $("goYesterdayBtn"),
+  goTodayBtn: $("goTodayBtn"),
+  taskInput: $("taskInput"),
+  addTaskBtn: $("addTaskBtn"),
+  taskList: $("taskList"),
+  taskStatsText: $("taskStatsText"),
+  taskTotalTime: $("taskTotalTime"),
+  taskTotalText: $("taskTotalText"),
+  taskWarning: $("taskWarning"),
+  mobileAddTaskBtn: $("openDrawerBtn"),
+  taskDrawer: $("taskDrawer"),
+  drawerOverlay: $("drawerOverlay"),
+  closeDrawerBtn: $("closeDrawerBtn"),
+  drawerTaskInput: $("drawerTaskInput"),
+  drawerDurationInput: $("drawerTimeInput"),
+  drawerAddBtn: $("drawerAddBtn"),
+  dailyRankTab: $("dailyRankTab"),
+  totalRankTab: $("totalRankTab"),
+  leaderList: $("leaderList"),
+  refreshLeaderboardBtn: $("refreshLeaderboardBtn"),
+  historyList: $("historyList"),
+  refreshHistoryBtn: $("refreshHistoryBtn"),
+  checkinArea: $("checkinArea"),
+  displayDate: $("displayDate"),
+  checkinStatus: $("checkinStatus"),
+  streakDays: $("streakDays"),
+  checkinBtn: $("checkinBtn"),
+  openHeatmapBtn: $("openHeatmapBtn"),
+  backToMainBtn: $("backToMainBtn"),
+  refreshHeatmapBtn: $("refreshHeatmapBtn"),
+  heatmapGrid: $("heatmapGrid"),
+  heatmapSubtitle: $("heatmapSubtitle"),
+  monthRow: $("monthRow"),
+  mainPage: $("mainPage"),
+  heatmapPage: $("heatmapPage"),
+  heatmapUserChip: $("heatmapUserChip"),
+  heatmapTitle: $("heatmapTitle"),
+  heatmap30Btn: $("heatmap30Btn"),
+  heatmap365Btn: $("heatmap365Btn"),
+};
+
+// 初始化
+dailyGoal = loadJSON(APP_CONFIG.GOAL_KEY, APP_CONFIG.DEFAULT_DAILY_GOAL);
+
+console.log("自习室应用已加载");
+
+// UI 更新函数
+function updateProgress(today) {
+  const validGoal = dailyGoal > 0 ? dailyGoal : 240;
+  const percent = (today / validGoal) * 100;
+  const display = Math.min(100, percent);
+  document.getElementById("progressBar").style.width = display + "%";
+  document.getElementById("progressText").innerHTML = 
+    `${Math.floor(percent)}% <span style="font-size:12px;color:var(--muted);font-weight:normal;margin-left:4px;">/ ${formatMinutes(validGoal)}</span>`;
+}
+
+function updateTimer() {
+  el.timer.textContent = timer.getDisplayTime();
+}
+
+function updateAuthUI() {
+  const currentUser = auth.getCurrentUser();
+  if (currentUser) {
+    el.userChip.textContent = currentUser.email || "已登录";
+    if (el.heatmapUserChip) el.heatmapUserChip.textContent = currentUser.email || "已登录";
+    el.authView.classList.add("hidden");
+    el.studyView.classList.remove("hidden");
+    el.logoutBtn.classList.remove("hidden");
+    el.checkinArea.classList.remove("hidden");
+    loadSubjectStats("today");
+  } else {
+    el.userChip.textContent = "未登录";
+    if (el.heatmapUserChip) el.heatmapUserChip.textContent = "未登录";
+    el.authView.classList.remove("hidden");
+    el.studyView.classList.add("hidden");
+    el.logoutBtn.classList.add("hidden");
+    el.checkinArea.classList.add("hidden");
+    renderTasks();
+    heatmap.clear();
+    if (el.heatmapGrid) el.heatmapGrid.innerHTML = "";
+    if (el.monthRow) el.monthRow.innerHTML = "";
+    if (el.heatmapSubtitle) {
+      el.heatmapSubtitle.textContent = "颜色越深，代表当天专注时间越长";
+    }
+    showMainPage();
+  }
+}
+
+function setAppStatus(text, type = "") {
+  if (!el.appStatus) return;
+  el.appStatus.textContent = text || "";
+  el.appStatus.classList.remove("error", "ok");
+  if (type) el.appStatus.classList.add(type);
+  if (!text) el.appStatus.classList.add("hidden");
+  else el.appStatus.classList.remove("hidden");
+}
+
+function setButtonLoading(button, loadingText, isLoading) {
+  if (!button) return;
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  if (isLoading) {
+    button.textContent = loadingText;
+    button.disabled = true;
+    button.classList.add("loading");
+  } else {
+    button.textContent = button.dataset.originalText;
+    button.disabled = false;
+    button.classList.remove("loading");
+  }
+}
+
+function setInteractiveState(enabled) {
+  const ids = ["loginBtn", "signupBtn", "startBtn", "pauseBtn", "resetBtn", "saveManualBtn", "refreshLeaderboardBtn", "refreshHistoryBtn", "addTaskBtn", "editGoalBtn", "checkinBtn"];
+  ids.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.classList.toggle("disabled", !enabled);
+  });
+}
+
+function animateNumber(element, target, duration = 600) {
+  const start = parseInt(element.textContent) || 0;
+  const startTime = performance.now();
+
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = Math.floor(start + (target - start) * eased);
+    element.textContent = current;
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      element.textContent = target;
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+// 页面切换
+function showMainPage() {
+  el.mainPage.classList.remove("hidden-page");
+  el.heatmapPage.classList.add("hidden-page");
+  window.scrollTo(0, 0);
+}
+
+function showHeatmapPage() {
+  el.mainPage.classList.add("hidden-page");
+  el.heatmapPage.classList.remove("hidden-page");
+  window.scrollTo(0, 0);
+}
+
+// Undo Toast
+function showUndoToast(minutes) {
+  if (undoTimer) {
+    clearTimeout(undoTimer);
+    hideUndoToast();
+  }
+  const toast = document.getElementById("undoToast");
+  const msg = document.getElementById("undoToastMsg");
+  const bar = document.getElementById("undoBar");
+  const undoBtn = document.getElementById("undoBtn");
+
+  msg.textContent = `已记录 ${minutes} 分钟`;
+  toast.classList.add("show");
+
+  bar.style.animation = "none";
+  bar.offsetHeight;
+  bar.style.animation = "";
+
+  let cancelled = false;
+
+  undoBtn.onclick = () => {
+    cancelled = true;
+    clearTimeout(undoTimer);
+    hideUndoToast();
+  };
+
+  undoTimer = setTimeout(async () => {
+    if (!cancelled) await saveStudySession(minutes);
+    hideUndoToast();
+  }, 5000);
+}
+
+function hideUndoToast() {
+  const toast = document.getElementById("undoToast");
+  toast.classList.remove("show");
+  undoTimer = null;
+}
+
+
+// 认证功能
+async function signup() {
+  if (!appReady || auth.isLoading()) return;
+  const username = el.signupUsername.value.trim();
+  const email = el.signupEmail.value.trim();
+  const password = el.signupPassword.value.trim();
+  
+  setButtonLoading(el.signupBtn, "注册中...", true);
+  const result = await auth.signup(username, email, password);
+  setButtonLoading(el.signupBtn, "", false);
+  
+  showMessage(result.message);
+}
+
+async function login() {
+  if (!appReady || auth.isLoading()) return;
+  const email = el.loginEmail.value.trim();
+  const password = el.loginPassword.value.trim();
+  
+  setButtonLoading(el.loginBtn, "登录中...", true);
+  const result = await auth.login(email, password);
+  setButtonLoading(el.loginBtn, "", false);
+  
+  if (result.success) {
+    updateAuthUI();
+  } else {
+    showMessage(result.message);
+  }
+}
+
+async function logout() {
+  await auth.logout();
+  updateAuthUI();
+}
+
+// 学习记录
+async function saveStudySession(minutes) {
+  const subjectInput = document.getElementById("customSubjectInput");
+  const subject = subjectInput ? subjectInput.value.trim() || "未分类" : "未分类";
+  
+  const result = await timer.saveSession(minutes, subject);
+  showMessage(result.message);
+  
+  if (result.success) {
+    await loadMyStats();
+    await loadHistory();
+    await loadLeaderboard();
+    
+    if (!el.heatmapPage.classList.contains("hidden-page")) {
+      await renderHeatmap();
+    }
+  }
+}
+
+async function loadMyStats() {
+  const result = await timer.loadStats(getLocalDateISO);
+  if (result.success) {
+    currentTodayMinutes = result.today;
+    animateNumber(el.todayMinutes, result.today);
+    animateNumber(el.totalHours, result.total);
+    animateNumber(el.sessionCount, result.sessionCount);
+    updateProgress(result.today);
+  }
+}
+
+// 科目统计
+async function loadSubjectStats(range = "today") {
+  const result = await timer.loadSubjectStats(range);
+  if (result.success) {
+    renderSubjectStats(result.subjects);
+  }
+}
+
+function renderSubjectStats(subjects) {
+  const container = document.getElementById("subjectStatsList");
+  if (!container) return;
+
+  if (!subjects || subjects.length === 0) {
+    container.innerHTML = '<div class="subject-empty">暂无科目数据</div>';
+    return;
+  }
+
+  container.innerHTML = "";
+  subjects.forEach(subject => {
+    const item = document.createElement("div");
+    item.className = "subject-item";
+    item.innerHTML = `
+      <div class="subject-name">${esc(subject.name)}</div>
+      <div class="subject-bar-container">
+        <div class="subject-bar" style="width:0%"></div>
+      </div>
+      <div class="subject-duration">${formatMinutes(subject.minutes)}</div>
+    `;
+    container.appendChild(item);
+
+    setTimeout(() => {
+      const bar = item.querySelector('.subject-bar');
+      bar.style.width = subject.percent + '%';
+    }, 50);
+  });
+}
+
+// 排行榜
+async function loadLeaderboard() {
+  setButtonLoading(el.refreshLeaderboardBtn, "刷新中...", true);
+  const result = await timer.loadLeaderboard(currentRankType);
+  setButtonLoading(el.refreshLeaderboardBtn, "", false);
+  
+  el.leaderList.innerHTML = "";
+  
+  if (!result.success || !result.data || !result.data.length) {
+    el.leaderList.innerHTML = `<div class="item"><div class="main muted">${currentRankType === "daily" ? "看看哪位小杰泥先上榜～" : "暂时还没有总榜数据。"}</div></div>`;
+    return;
+  }
+  
+  const currentUser = auth.getCurrentUser();
+  const currentUsername = currentUser?.user_metadata?.username || currentUser?.email?.split("@")[0] || "";
+  
+  result.data.forEach((row, idx) => {
+    const mins = Number(row.total_minutes || 0);
+    const isMe = (row.user_id && currentUser && row.user_id === currentUser.id) || (row.username === currentUsername);
+    const div = document.createElement("div");
+    div.className = "item" + (isMe ? " me" : "");
+    div.innerHTML = `<div style="width:34px;text-align:center">${idx === 0 ? '👑' : idx + 1}</div><div class="main"><div>${esc(row.username || "学习者")}${isMe ? '<span style="font-size:12px;color:var(--accent);">（我）</span>' : ""}</div><div class="small muted">${currentRankType === "daily" ? "今日学习时长" : "总学习时长"}：${formatMinutes(mins)}</div></div>`;
+    el.leaderList.appendChild(div);
+  });
+}
+
+// 历史记录
+async function loadHistory() {
+  setButtonLoading(el.refreshHistoryBtn, "刷新中...", true);
+  const result = await timer.loadHistory();
+  setButtonLoading(el.refreshHistoryBtn, "", false);
+  
+  el.historyList.innerHTML = "";
+  
+  if (!result.success || !result.data.length) {
+    el.historyList.innerHTML = '<div class="item"><div class="main muted">还没有学习记录。快去完成一次专注吧！</div></div>';
+    return;
+  }
+  
+  result.data.forEach(row => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `<div class="main"><div>${new Date(row.created_at).toLocaleString("zh-CN")}</div><div class="small muted">${formatMinutes(Number(row.duration_minutes || 0))}</div></div>`;
+    el.historyList.appendChild(div);
+  });
+}
+
+
+// 任务管理
+async function loadTasksByDate(dateStr) {
+  taskManager.setSelectedDate(dateStr);
+  const result = await taskManager.loadTasksByDate(dateStr);
+  renderTasks();
+}
+
+async function addTask(text, dateStr, durationMinutes, priority) {
+  const result = await taskManager.addTask(text, dateStr, durationMinutes, priority);
+  if (!result.success) {
+    showMessage(result.message);
+  }
+}
+
+async function toggleTaskDone(taskId, done) {
+  await taskManager.toggleTaskDone(taskId, done);
+}
+
+async function deleteTask(taskId) {
+  await taskManager.deleteTask(taskId);
+}
+
+async function changeTaskDate(days) {
+  const d = new Date(selectedTaskDate + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  selectedTaskDate = getLocalDateISO(d);
+  el.taskDatePicker.value = selectedTaskDate;
+  await loadTasksByDate(selectedTaskDate);
+}
+
+function renderTasks() {
+  const tasks = taskManager.getCurrentTasks();
+  const stats = taskManager.getTaskStats();
+  
+  el.taskList.innerHTML = "";
+  
+  const dateObj = new Date(selectedTaskDate + "T00:00:00");
+  const displayDate = `${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+
+  if (stats.total === 0) {
+    el.taskStatsText.textContent = `${displayDate} 暂无任务`;
+    el.taskStatsText.style.color = "var(--muted)";
+    el.taskList.innerHTML = '<div class="item"><div class="main muted">这一天还没有任务，添一条试试。</div></div>';
+    el.taskTotalTime.style.display = "none";
+    return;
+  }
+
+  el.taskStatsText.textContent = `${displayDate} · 已完成 ${stats.done} / ${stats.total} 项 (${stats.percentage}%)`;
+  el.taskStatsText.style.color = stats.percentage === 100 ? "var(--ok)" : "var(--accent)";
+
+  const hours = Math.floor(stats.totalMinutes / 60);
+  const mins = stats.totalMinutes % 60;
+  let timeText = "今日计划：";
+  if (hours > 0) timeText += `${hours}小时`;
+  if (mins > 0) timeText += `${mins}分钟`;
+  if (stats.totalMinutes === 0) timeText += "0分钟";
+
+  el.taskTotalText.textContent = timeText;
+  el.taskTotalTime.style.display = "flex";
+
+  if (stats.isOverload) {
+    el.taskWarning.style.display = "block";
+    el.taskTotalTime.classList.add("overload");
+  } else {
+    el.taskWarning.style.display = "none";
+    el.taskTotalTime.classList.remove("overload");
+  }
+
+  const sortedTasks = taskManager.getSortedTasks();
+
+  sortedTasks.forEach((task) => {
+    const item = document.createElement("div");
+    const priorityClass = task.priority || "medium";
+    item.className = "item task-priority-" + priorityClass + (task.done ? " task-done" : "");
+
+    const priorityBadgeClass = `priority-${priorityClass}`;
+    const durationText = task.duration_minutes ? `${task.duration_minutes}分钟` : "";
+
+    item.innerHTML = `
+      <input type="checkbox" ${task.done ? "checked" : ""}>
+      <div class="main">
+        <div class="task-header">
+          <span class="priority-badge ${priorityBadgeClass}"></span>
+          <span class="task-text">${esc(task.text)}</span>
+          <span class="task-time">${durationText}</span>
+        </div>
+      </div>
+      <button class="btn ghost">删除</button>
+    `;
+    
+    const checkbox = item.querySelector("input");
+    const delBtn = item.querySelector("button");
+    
+    checkbox.addEventListener("change", () => {
+      toggleTaskDone(task.id, checkbox.checked);
+    });
+    
+    delBtn.addEventListener("click", () => {
+      deleteTask(task.id);
+    });
+    
+    el.taskList.appendChild(item);
+  });
+}
+
+// 签到功能
+async function loadCheckinInfo() {
+  const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+  el.displayDate.textContent = todayStr;
+  
+  const info = await auth.loadCheckinInfo();
+  if (!info) return;
+  
+  const todayISO = getLocalDateISO();
+  el.streakDays.textContent = info.consecutive_days || 0;
+  
+  if (info.last_checkin_date === todayISO) {
+    el.checkinStatus.textContent = "已签到";
+    el.checkinStatus.classList.add("ok");
+    el.checkinBtn.textContent = "今日已完成";
+    el.checkinBtn.disabled = true;
+    el.checkinBtn.classList.add("disabled");
+  } else {
+    el.checkinStatus.textContent = "未签到";
+    el.checkinStatus.classList.remove("ok");
+    el.checkinBtn.textContent = "今日签到";
+    el.checkinBtn.disabled = false;
+    el.checkinBtn.classList.remove("disabled");
+  }
+}
+
+async function handleCheckin() {
+  if (auth.isLoading()) return;
+  
+  setButtonLoading(el.checkinBtn, "签到中...", true);
+  const result = await auth.checkin(currentTodayMinutes, getLocalDateISO);
+  setButtonLoading(el.checkinBtn, "", false);
+  
+  showMessage(result.message);
+  
+  if (result.success) {
+    await loadCheckinInfo();
+  }
+}
+
+// 热力图
+async function renderHeatmap() {
+  if (!el.heatmapGrid) return;
+
+  el.heatmapGrid.innerHTML = `<div class="muted" style="grid-column:1/-1;padding:20px 0;">加载热力图中...</div>`;
+  if (el.monthRow) el.monthRow.innerHTML = "";
+
+  await heatmap.loadData(getLocalDateISO);
+  const { days, months, totalMinutes } = heatmap.generateHeatmapData(getLocalDateISO);
+
+  const gridFrag = document.createDocumentFragment();
+  const monthFrag = document.createDocumentFragment();
+
+  months.forEach(month => {
+    const monthCell = document.createElement("div");
+    monthCell.textContent = month.text;
+    monthCell.style.minHeight = "14px";
+    monthFrag.appendChild(monthCell);
+  });
+
+  days.forEach(day => {
+    const dayEl = document.createElement("div");
+    dayEl.className = `heatmap-day ${day.heatClass} ${day.isToday ? "today" : ""}`;
+    dayEl.title = `${day.date}｜专注 ${day.minutes} 分钟`;
+    dayEl.style.opacity = day.opacity;
+
+    if (day.isInRange) {
+      dayEl.addEventListener("click", async () => {
+        showMainPage();
+        selectedTaskDate = day.date;
+        el.taskDatePicker.value = day.date;
+        document.querySelector('[data-side-tab="tasks"]').click();
+        await loadTasksByDate(day.date);
+      });
+    }
+
+    gridFrag.appendChild(dayEl);
+  });
+
+  el.heatmapGrid.innerHTML = "";
+  el.heatmapGrid.appendChild(gridFrag);
+
+  if (el.monthRow) {
+    el.monthRow.innerHTML = "";
+    el.monthRow.appendChild(monthFrag);
+  }
+
+  if (el.heatmapTitle) {
+    el.heatmapTitle.textContent = `过去 ${heatmap.getRange()} 天专注分布`;
+  }
+
+  if (el.heatmapSubtitle) {
+    const subjectText = heatmap.getSubjectFilter() === "全部" ? "" : `（${heatmap.getSubjectFilter()}）`;
+    if (totalMinutes === 0) {
+      el.heatmapSubtitle.innerHTML = `过去 ${heatmap.getRange()} 天${subjectText} · 暂无专注记录`;
+    } else {
+      el.heatmapSubtitle.innerHTML = `过去 ${heatmap.getRange()} 天${subjectText} · 共专注 <b>${Math.floor(totalMinutes / 60)}</b> 小时`;
+    }
+  }
+}
+
+async function loadSubjectList() {
+  const result = await heatmap.loadSubjectList();
+  if (!result.success) return;
+  
+  const filterEl = document.getElementById("subjectFilter");
+  if (filterEl) {
+    filterEl.innerHTML = '<option value="全部">全部科目</option>';
+    result.subjects.forEach(subject => {
+      const option = document.createElement("option");
+      option.value = subject;
+      option.textContent = subject;
+      filterEl.appendChild(option);
+    });
+  }
+}
+
+
+// 计时器控制
+function startTimer() {
+  const onTick = () => updateTimer();
+  const onComplete = async (minutes) => {
+    await saveStudySession(minutes);
+  };
+  
+  const started = timer.start(onTick, onComplete);
+  if (started) {
+    el.statusText.textContent = "专注正在进行...";
+  }
+}
+
+function pauseTimer() {
+  const paused = timer.pause();
+  if (paused) {
+    el.statusText.textContent = "已暂停。";
+  }
+}
+
+function resetTimer() {
+  timer.reset(true);
+  updateTimer();
+  el.statusText.textContent = "现在只做这一件事。";
+}
+
+// 标签页切换
+function bindTabs() {
+  document.querySelectorAll("[data-auth-tab]").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-auth-tab]").forEach(x => x.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.getAttribute("data-auth-tab");
+    $("loginPane").classList.toggle("hidden", tab !== "login");
+    $("signupPane").classList.toggle("hidden", tab !== "signup");
+  }));
+  
+  document.querySelectorAll("[data-side-tab]").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-side-tab]").forEach(x => x.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.getAttribute("data-side-tab");
+    $("tasksPane").classList.toggle("hidden", tab !== "tasks");
+    $("leaderboardPane").classList.toggle("hidden", tab !== "leaderboard");
+    $("historyPane").classList.toggle("hidden", tab !== "history");
+  }));
+}
+
+// 事件绑定
+function bindCommon() {
+  // 时长选择
+  document.querySelectorAll("[data-time]").forEach(btn => btn.addEventListener("click", () => {
+    if (timer.isRunning()) return;
+    document.querySelectorAll("[data-time]").forEach(x => x.classList.remove("time-btn-active"));
+    btn.classList.add("time-btn-active");
+    const seconds = Number(btn.dataset.time);
+    timer.setDuration(seconds);
+    updateTimer();
+    const minutes = Math.floor(seconds / 60);
+    document.getElementById("modeText").textContent = "当前专注：" + minutes + "分钟";
+    el.saveManualBtn.textContent = "手动记 " + minutes + " 分钟";
+  }));
+
+  // 主题切换
+  el.themeBtn.addEventListener("click", () => {
+    document.body.classList.toggle("dark");
+    const dark = document.body.classList.contains("dark");
+    localStorage.setItem(APP_CONFIG.THEME_KEY, dark ? "dark" : "light");
+    el.themeBtn.textContent = dark ? "☀" : "☾";
+  });
+
+  // 全屏
+  el.fullBtn.addEventListener("click", async () => {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  });
+
+  // 认证按钮
+  el.logoutBtn.addEventListener("click", logout);
+  el.loginBtn.addEventListener("click", login);
+  el.signupBtn.addEventListener("click", signup);
+
+  // 计时器按钮
+  el.startBtn.addEventListener("click", startTimer);
+  el.pauseBtn.addEventListener("click", pauseTimer);
+  el.resetBtn.addEventListener("click", resetTimer);
+  el.saveManualBtn.addEventListener("click", () => {
+    const minutes = Math.floor(timer.getSelectedDuration() / 60);
+    showUndoToast(minutes);
+  });
+
+  // 点击计时器切换模式
+  el.timer.addEventListener("click", () => {
+    if (!timer.isRunning()) return;
+    const toggled = timer.toggleMode();
+    if (toggled) {
+      updateTimer();
+      const modeText = timer.getTimerMode() === "countdown" ? "剩余时间" : "已用时间";
+      showMessage(`切换为${modeText}模式`);
+    }
+  });
+
+  // 自定义时长
+  const applyCustomTime = () => {
+    if (timer.isRunning()) return;
+    const val = parseInt(document.getElementById("customMinInput").value, 10);
+    if (isNaN(val) || val <= 0 || val > 600) {
+      showMessage("请输入 1~600 之间的分钟数。");
+      return;
+    }
+    document.querySelectorAll("[data-time]").forEach(x => x.classList.remove("time-btn-active"));
+    timer.setDuration(val * 60);
+    updateTimer();
+    document.getElementById("modeText").textContent = "当前专注：" + val + "分钟";
+    el.saveManualBtn.textContent = "手动记 " + val + " 分钟";
+    el.saveManualBtn.dataset.originalText = "手动记 " + val + " 分钟";
+  };
+  document.getElementById("customTimeBtn").addEventListener("click", applyCustomTime);
+  document.getElementById("customMinInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") applyCustomTime();
+  });
+
+  // 任务优先级样式
+  const prioritySelect = document.getElementById("taskPrioritySelect");
+  if (prioritySelect) {
+    const updatePriorityStyle = () => {
+      const val = prioritySelect.value;
+      prioritySelect.style.backgroundColor =
+        val === "high" ? "rgba(239,68,68,0.1)" :
+        val === "medium" ? "rgba(245,158,11,0.1)" :
+        "rgba(156,163,175,0.05)";
+      prioritySelect.style.borderColor =
+        val === "high" ? "rgba(239,68,68,0.3)" :
+        val === "medium" ? "rgba(245,158,11,0.3)" :
+        "rgba(156,163,175,0.2)";
+    };
+    prioritySelect.addEventListener("change", updatePriorityStyle);
+    updatePriorityStyle();
+  }
+
+  // 添加任务
+  el.addTaskBtn.addEventListener("click", async () => {
+    const text = el.taskInput.value.trim();
+    const timeInput = document.getElementById("taskTimeInput");
+    const prioritySelect = document.getElementById("taskPrioritySelect");
+    const durationMinutes = parseInt(timeInput.value, 10);
+    const priority = prioritySelect.value;
+
+    if (!text) {
+      showMessage("请输入任务内容。");
+      return;
+    }
+    if (!durationMinutes || durationMinutes <= 0) {
+      showMessage("请输入任务时长（分钟）。");
+      return;
+    }
+
+    await addTask(text, selectedTaskDate, durationMinutes, priority);
+    el.taskInput.value = "";
+    timeInput.value = "";
+    prioritySelect.value = "medium";
+  });
+  el.taskInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") el.addTaskBtn.click();
+  });
+
+  // 移动端抽屉
+  let selectedDrawerPriority = "medium";
+
+  if (el.mobileAddTaskBtn) {
+    el.mobileAddTaskBtn.addEventListener("click", () => {
+      el.taskDrawer.classList.add("show");
+      el.drawerOverlay.classList.add("show");
+    });
+  }
+
+  if (el.closeDrawerBtn) {
+    el.closeDrawerBtn.addEventListener("click", () => {
+      el.taskDrawer.classList.remove("show");
+      el.drawerOverlay.classList.remove("show");
+    });
+  }
+
+  if (el.drawerOverlay) {
+    el.drawerOverlay.addEventListener("click", () => {
+      el.taskDrawer.classList.remove("show");
+      el.drawerOverlay.classList.remove("show");
+    });
+  }
+
+  const drawerPriorityBtns = document.querySelectorAll(".drawer-priority-btn");
+  drawerPriorityBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      drawerPriorityBtns.forEach(b => {
+        b.classList.remove("active-high", "active-medium", "active-low");
+      });
+      selectedDrawerPriority = btn.dataset.priority;
+      btn.classList.add(`active-${selectedDrawerPriority}`);
+    });
+  });
+
+  if (el.drawerAddBtn) {
+    el.drawerAddBtn.addEventListener("click", async () => {
+      const text = el.drawerTaskInput.value.trim();
+      if (!text) {
+        showMessage("请输入任务内容。");
+        return;
+      }
+
+      const durationMinutes = parseInt(el.drawerDurationInput.value);
+      if (!durationMinutes || durationMinutes <= 0) {
+        showMessage("请输入任务时长（分钟）。");
+        return;
+      }
+
+      await addTask(text, selectedTaskDate, durationMinutes, selectedDrawerPriority);
+
+      el.drawerTaskInput.value = "";
+      el.drawerDurationInput.value = "";
+      selectedDrawerPriority = "medium";
+      drawerPriorityBtns.forEach(b => {
+        b.classList.remove("active-high", "active-medium", "active-low");
+      });
+      drawerPriorityBtns[1].classList.add("active-medium");
+
+      el.taskDrawer.classList.remove("show");
+      el.drawerOverlay.classList.remove("show");
+    });
+  }
+
+  // 任务日期
+  el.taskDatePicker.addEventListener("change", async (e) => {
+    if (e.target.value) {
+      selectedTaskDate = e.target.value;
+      await loadTasksByDate(selectedTaskDate);
+    }
+  });
+  el.goTodayBtn.addEventListener("click", async () => {
+    selectedTaskDate = getLocalDateISO();
+    el.taskDatePicker.value = selectedTaskDate;
+    await loadTasksByDate(selectedTaskDate);
+  });
+  el.goYesterdayBtn.addEventListener("click", () => changeTaskDate(-1));
+
+  // 排行榜切换
+  el.dailyRankTab.addEventListener("click", () => {
+    if (currentRankType === "daily") return;
+    currentRankType = "daily";
+    el.dailyRankTab.classList.add("active");
+    el.totalRankTab.classList.remove("active");
+    loadLeaderboard();
+  });
+
+  el.totalRankTab.addEventListener("click", () => {
+    if (currentRankType === "total") return;
+    currentRankType = "total";
+    el.totalRankTab.classList.add("active");
+    el.dailyRankTab.classList.remove("active");
+    loadLeaderboard();
+  });
+
+  el.refreshLeaderboardBtn.addEventListener("click", loadLeaderboard);
+  el.refreshHistoryBtn.addEventListener("click", loadHistory);
+
+  // 目标设置
+  el.editGoalBtn.addEventListener("click", () => {
+    const input = prompt("请输入目标学习时长（分钟）：", dailyGoal);
+    if (input === null) return;
+    const val = parseInt(input, 10);
+    if (isNaN(val) || val <= 0) {
+      showMessage("请输入大于 0 的有效分钟数。");
+      return;
+    }
+    dailyGoal = val;
+    saveJSON(APP_CONFIG.GOAL_KEY, dailyGoal);
+    loadMyStats();
+  });
+
+  // 签到
+  el.checkinBtn.addEventListener("click", handleCheckin);
+
+  // 沉浸模式
+  el.immersiveBtn.addEventListener("click", () => {
+    document.body.classList.add("immersive");
+    el.exitImmersiveBtn.classList.remove("hidden");
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  });
+  el.exitImmersiveBtn.addEventListener("click", () => {
+    document.body.classList.remove("immersive");
+    el.exitImmersiveBtn.classList.add("hidden");
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+
+  // 热力图
+  if (el.openHeatmapBtn) {
+    el.openHeatmapBtn.addEventListener("click", async () => {
+      heatmap.setRange(30);
+      heatmap.setSubjectFilter("全部");
+      if (el.heatmap30Btn) el.heatmap30Btn.classList.add("active");
+      if (el.heatmap365Btn) el.heatmap365Btn.classList.remove("active");
+      showHeatmapPage();
+      await loadSubjectList();
+      await renderHeatmap();
+    });
+  }
+
+  if (el.backToMainBtn) {
+    el.backToMainBtn.addEventListener("click", () => {
+      showMainPage();
+    });
+  }
+
+  if (el.refreshHeatmapBtn) {
+    el.refreshHeatmapBtn.addEventListener("click", async () => {
+      await renderHeatmap();
+    });
+  }
+
+  if (el.heatmap30Btn) {
+    el.heatmap30Btn.addEventListener("click", async () => {
+      if (heatmap.getRange() === 30) return;
+      heatmap.setRange(30);
+      el.heatmap30Btn.classList.add("active");
+      el.heatmap365Btn.classList.remove("active");
+      await renderHeatmap();
+    });
+  }
+
+  if (el.heatmap365Btn) {
+    el.heatmap365Btn.addEventListener("click", async () => {
+      if (heatmap.getRange() === 365) return;
+      heatmap.setRange(365);
+      el.heatmap365Btn.classList.add("active");
+      el.heatmap30Btn.classList.remove("active");
+      await renderHeatmap();
+    });
+  }
+
+  const subjectFilterEl = document.getElementById("subjectFilter");
+  if (subjectFilterEl) {
+    subjectFilterEl.addEventListener("change", async (e) => {
+      heatmap.setSubjectFilter(e.target.value);
+      await renderHeatmap();
+    });
+  }
+
+  // 科目统计范围切换
+  document.querySelectorAll("[data-range]").forEach(btn => btn.addEventListener("click", async () => {
+    document.querySelectorAll("[data-range]").forEach(x => x.classList.remove("active"));
+    btn.classList.add("active");
+    const range = btn.getAttribute("data-range");
+    await loadSubjectStats(range);
+  }));
+}
+
+
+// 会话刷新
+async function refreshSession() {
+  try {
+    const result = await auth.getSession();
+    updateAuthUI();
+    
+    if (result.success && result.user) {
+      await auth.ensureProfile();
+      await Promise.all([
+        loadMyStats(),
+        loadHistory(),
+        loadCheckinInfo(),
+        loadLeaderboard(),
+        loadTasksByDate(selectedTaskDate)
+      ]);
+    } else {
+      renderTasks();
+      await loadLeaderboard();
+    }
+  } catch (err) {
+    console.error("refreshSession error:", err);
+    setAppStatus("登录状态恢复失败，请刷新重试。", "error");
+  } finally {
+    appReady = true;
+    setInteractiveState(true);
+    setAppStatus("");
+  }
+}
+
+// 主函数
+async function main() {
+  try {
+    // 主题初始化
+    const theme = localStorage.getItem(APP_CONFIG.THEME_KEY);
+    if (theme === "dark") {
+      document.body.classList.add("dark");
+      el.themeBtn.textContent = "☀";
+    }
+    
+    // 日期初始化
+    selectedTaskDate = getLocalDateISO();
+    el.taskDatePicker.value = selectedTaskDate;
+    
+    // 绑定事件
+    bindTabs();
+    bindCommon();
+    renderTasks();
+    updateTimer();
+    
+    // 禁用交互
+    setInteractiveState(false);
+    setAppStatus("正在初始化...");
+    
+    // 每日提醒
+    if (!localStorage.getItem("today_opened_v2_" + getLocalDateISO())) {
+      setTimeout(() => alert("今天也要保持专注哦 🔥"), 500);
+      localStorage.setItem("today_opened_v2_" + getLocalDateISO(), "true");
+    }
+    
+    // 监听认证状态变化
+    supabase.auth.onAuthStateChange((event, session) => {
+      auth.setCurrentUser(session?.user || null);
+      updateAuthUI();
+
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+        setTimeout(() => {
+          refreshSession();
+        }, 0);
+      }
+    });
+    
+    // 刷新会话
+    await refreshSession();
+    
+  } catch (err) {
+    console.error("main error:", err);
+    setAppStatus("连接失败，请刷新重试。", "error");
+  }
+}
+
+// 启动应用
+main();
+
