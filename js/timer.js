@@ -10,6 +10,85 @@ export class Timer {
     this.timerMode = "countdown"; // "countdown" 或 "countup"
     this.isFreeMode = false; // 专注计时模式（无限制）
     this.elapsedInFreeMode = 0; // 专注计时模式下的累计时间
+    this.activeSessionId = null; // 当前活动的计时会话ID
+  }
+
+  // 保存计时状态到数据库
+  async saveTimerState() {
+    const user = this.auth.getCurrentUser();
+    if (!user) return;
+
+    const state = {
+      user_id: user.id,
+      started_at: new Date(this.startedAt).toISOString(),
+      duration: this.selectedDuration,
+      remaining: this.remaining,
+      timer_mode: this.timerMode,
+      is_free_mode: this.isFreeMode,
+      elapsed_in_free_mode: this.elapsedInFreeMode,
+      updated_at: new Date().toISOString()
+    };
+
+    if (this.activeSessionId) {
+      // 更新现有会话
+      await this.supabase
+        .from("timer_sessions")
+        .update(state)
+        .eq("id", this.activeSessionId);
+    } else {
+      // 创建新会话
+      const { data, error } = await this.supabase
+        .from("timer_sessions")
+        .insert(state)
+        .select()
+        .single();
+
+      if (data) {
+        this.activeSessionId = data.id;
+      }
+    }
+  }
+
+  // 从数据库恢复计时状态
+  async restoreTimerState() {
+    const user = this.auth.getCurrentUser();
+    if (!user) return null;
+
+    const { data, error } = await this.supabase
+      .from("timer_sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) return null;
+
+    // 检查会话是否在最近24小时内
+    const updatedAt = new Date(data.updated_at).getTime();
+    const now = Date.now();
+    if (now - updatedAt > 24 * 60 * 60 * 1000) {
+      // 超过24小时，清除旧会话
+      await this.clearTimerState();
+      return null;
+    }
+
+    return data;
+  }
+
+  // 清除数据库中的计时状态
+  async clearTimerState() {
+    const user = this.auth.getCurrentUser();
+    if (!user) return;
+
+    if (this.activeSessionId) {
+      await this.supabase
+        .from("timer_sessions")
+        .delete()
+        .eq("id", this.activeSessionId);
+
+      this.activeSessionId = null;
+    }
   }
 
   isRunning() {
@@ -78,11 +157,15 @@ export class Timer {
   }
 
   // 开始计时
-  start(onTick, onComplete) {
+  async start(onTick, onComplete) {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser || this.timer) return false;
 
     this.startedAt = Date.now();
+
+    // 保存计时状态到数据库
+    await this.saveTimerState();
+
     this.timer = setInterval(async () => {
       if (this.isFreeMode) {
         this.elapsedInFreeMode += 1;
@@ -95,8 +178,14 @@ export class Timer {
           this.stop();
           const minutes = Math.floor(this.selectedDuration / 60);
           if (onComplete) await onComplete(minutes);
+          await this.clearTimerState();
           this.reset(false);
         }
+      }
+
+      // 每10秒更新一次数据库状态
+      if ((this.isFreeMode ? this.elapsedInFreeMode : this.selectedDuration - this.remaining) % 10 === 0) {
+        await this.saveTimerState();
       }
     }, 1000);
 
@@ -104,10 +193,12 @@ export class Timer {
   }
 
   // 暂停计时
-  pause() {
+  async pause() {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+      // 暂停时清除数据库状态
+      await this.clearTimerState();
       return true;
     }
     return false;
@@ -122,7 +213,7 @@ export class Timer {
   }
 
   // 重置计时器
-  reset(clearStartTime = true) {
+  async reset(clearStartTime = true) {
     this.stop();
     this.remaining = this.selectedDuration;
     if (clearStartTime) {
@@ -131,6 +222,8 @@ export class Timer {
     this.timerMode = "countdown";
     this.isFreeMode = false;
     this.elapsedInFreeMode = 0;
+    // 重置时清除数据库状态
+    await this.clearTimerState();
   }
 
   // 保存学习记录

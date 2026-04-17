@@ -271,6 +271,93 @@ function showUndoToast(minutes) {
   }, 5000);
 }
 
+function showFocusCompleteToast(minutes) {
+  if (undoTimer) {
+    clearTimeout(undoTimer);
+    hideUndoToast();
+  }
+  const toast = document.getElementById("undoToast");
+  const msg = document.getElementById("undoToastMsg");
+  const bar = document.getElementById("undoBar");
+  const undoBtn = document.getElementById("undoBtn");
+
+  msg.textContent = `已记录 ${minutes} 分钟专注时间`;
+  toast.classList.add("show");
+
+  bar.style.animation = "none";
+  bar.offsetHeight;
+  bar.style.animation = "";
+
+  let cancelled = false;
+
+  undoBtn.onclick = () => {
+    cancelled = true;
+    clearTimeout(undoTimer);
+    hideUndoToast();
+    showMessage("已取消记录");
+  };
+
+  undoTimer = setTimeout(async () => {
+    if (!cancelled) {
+      await saveStudySession(minutes);
+    }
+    hideUndoToast();
+  }, 5000);
+}
+
+// 恢复计时状态
+async function restoreTimerState() {
+  const state = await timer.restoreTimerState();
+  if (!state) return;
+
+  // 恢复计时器属性
+  timer.selectedDuration = state.duration;
+  timer.timerMode = state.timer_mode;
+  timer.isFreeMode = state.is_free_mode;
+  timer.activeSessionId = state.id;
+
+  // 计算实际经过的时间
+  const startedAt = new Date(state.started_at).getTime();
+  const now = Date.now();
+  const elapsedSeconds = Math.floor((now - startedAt) / 1000);
+
+  if (state.is_free_mode) {
+    // 专注计时模式：累加已用时间
+    timer.elapsedInFreeMode = state.elapsed_in_free_mode + elapsedSeconds;
+    timer.remaining = timer.elapsedInFreeMode;
+  } else {
+    // 倒计时模式：减去已用时间
+    timer.remaining = Math.max(0, state.remaining - elapsedSeconds);
+
+    // 如果时间已到，清除状态
+    if (timer.remaining <= 0) {
+      await timer.clearTimerState();
+      return;
+    }
+  }
+
+  // 更新UI
+  updateTimer();
+
+  // 自动开始计时
+  timer.startedAt = startedAt;
+  const onTick = () => updateTimer();
+  const onComplete = async (minutes) => {
+    await saveStudySession(minutes);
+  };
+  await timer.start(onTick, onComplete);
+
+  // 显示恢复提示
+  if (state.is_free_mode) {
+    el.statusText.textContent = "已恢复专注计时";
+    el.finishFocusBtn.style.display = "";
+  } else {
+    el.statusText.textContent = "已恢复计时";
+  }
+
+  showMessage("计时状态已恢复");
+}
+
 function hideUndoToast() {
   const toast = document.getElementById("undoToast");
   toast.classList.remove("show");
@@ -672,8 +759,8 @@ function startTimer() {
   }
 }
 
-function pauseTimer() {
-  const paused = timer.pause();
+async function pauseTimer() {
+  const paused = await timer.pause();
   if (paused) {
     el.statusText.textContent = "已暂停。";
 
@@ -687,8 +774,8 @@ function pauseTimer() {
   }
 }
 
-function resetTimer() {
-  timer.reset(true);
+async function resetTimer() {
+  await timer.reset(true);
   updateTimer();
   el.statusText.textContent = "现在只做这一件事。";
   el.finishFocusBtn.style.display = "none";
@@ -805,14 +892,19 @@ function bindCommon() {
     const elapsed = timer.getElapsedSeconds();
     const minutes = Math.floor(elapsed / 60);
 
-    if (minutes > 0) {
-      timer.pause();
-      await saveStudySession(minutes);
-      showUndoToast(minutes);
-      timer.reset();
-      updateTimer();
-      el.finishFocusBtn.style.display = "none";
+    if (minutes < 1) {
+      showMessage("专注时间太短，至少需要 1 分钟");
+      return;
     }
+
+    timer.pause();
+    timer.reset();
+    updateTimer();
+    el.finishFocusBtn.style.display = "none";
+    el.statusText.textContent = "已完成专注";
+
+    // 显示撤销提示，5秒后自动保存
+    showFocusCompleteToast(minutes);
   });
 
   // 任务优先级样式
@@ -1058,7 +1150,7 @@ async function refreshSession() {
   try {
     const result = await auth.getSession();
     updateAuthUI();
-    
+
     if (result.success && result.user) {
       await auth.ensureProfile();
       await Promise.all([
@@ -1068,6 +1160,9 @@ async function refreshSession() {
         loadLeaderboard(),
         loadTasksByDate(selectedTaskDate)
       ]);
+
+      // 恢复计时状态
+      await restoreTimerState();
     } else {
       renderTasks();
       await loadLeaderboard();
