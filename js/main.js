@@ -788,7 +788,6 @@ function bindCommon() {
     timer.setDuration(0); // 0 表示无限制正计时模式
     updateTimer();
     document.getElementById("modeText").textContent = "专注计时模式（无时间限制）";
-    el.saveManualBtn.style.display = "none"; // 隐藏手动记录按钮
   });
 
   // 任务优先级样式
