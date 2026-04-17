@@ -204,7 +204,7 @@ function setInteractiveState(enabled) {
   });
 }
 
-function animateNumber(element, target, duration = 600) {
+function animateNumber(element, target, duration = 600, unit = "") {
   const start = parseInt(element.textContent) || 0;
   const startTime = performance.now();
 
@@ -213,12 +213,12 @@ function animateNumber(element, target, duration = 600) {
     const progress = Math.min(elapsed / duration, 1);
     const eased = 1 - Math.pow(1 - progress, 3);
     const current = Math.floor(start + (target - start) * eased);
-    element.textContent = current;
+    element.textContent = current + (unit ? " " + unit : "");
 
     if (progress < 1) {
       requestAnimationFrame(update);
     } else {
-      element.textContent = target;
+      element.textContent = target + (unit ? " " + unit : "");
     }
   }
 
@@ -335,8 +335,8 @@ async function loadMyStats() {
   const result = await timer.loadStats(getLocalDateISO);
   if (result.success) {
     currentTodayMinutes = result.today;
-    animateNumber(el.todayMinutes, result.today);
-    animateNumber(el.totalHours, result.total);
+    animateNumber(el.todayMinutes, result.today, 600, "min");
+    animateNumber(el.totalHours, result.total, 600, "h");
     animateNumber(el.sessionCount, result.sessionCount);
     updateProgress(result.today);
   }
@@ -667,6 +667,14 @@ function pauseTimer() {
   const paused = timer.pause();
   if (paused) {
     el.statusText.textContent = "已暂停。";
+
+    // 如果是专注计时模式，暂停时保存记录
+    if (timer.isFreeMode && timer.elapsedInFreeMode > 0) {
+      const minutes = Math.floor(timer.elapsedInFreeMode / 60);
+      if (minutes > 0) {
+        showUndoToast(minutes);
+      }
+    }
   }
 }
 
@@ -768,6 +776,15 @@ function bindCommon() {
   document.getElementById("customTimeBtn").addEventListener("click", applyCustomTime);
   document.getElementById("customMinInput").addEventListener("keydown", e => {
     if (e.key === "Enter") applyCustomTime();
+  });
+
+  // 专注计时按钮
+  document.getElementById("freeTimerBtn").addEventListener("click", () => {
+    document.querySelectorAll("[data-time]").forEach(x => x.classList.remove("time-btn-active"));
+    timer.setDuration(0); // 0 表示无限制正计时模式
+    updateTimer();
+    document.getElementById("modeText").textContent = "专注计时模式（无时间限制）";
+    el.saveManualBtn.style.display = "none"; // 隐藏手动记录按钮
   });
 
   // 任务优先级样式

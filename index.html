@@ -1132,6 +1132,7 @@
                   <button class="btn" data-time="2700">45m</button>
                   <button class="btn" data-time="5400">90m</button>
                   <button class="btn time-btn-active" data-time="7200">120m</button>
+                  <button class="btn" id="freeTimerBtn" style="background:linear-gradient(135deg, var(--accent), var(--ok)); color:white;">⏱ 专注计时</button>
                   <div style="display:flex;gap:6px;align-items:center;">
                     <input id="customMinInput" type="number" min="1" max="600" placeholder="自定义" style="width:80px;padding:10px 10px;font-size:13px;border-radius:14px;text-align:center;" />
                     <button class="btn" id="customTimeBtn">确定</button>
@@ -1171,15 +1172,15 @@
               <div class="stats">
                 <div class="stat">
                   <div class="k">今日专注</div>
-                  <div class="v" id="todayMinutes">0m</div>
+                  <div class="v"><span id="todayMinutes">0</span><span class="unit">min</span></div>
                 </div>
                 <div class="stat">
                   <div class="k">累计时长</div>
-                  <div class="v" id="totalHours">0h</div>
+                  <div class="v"><span id="totalHours">0</span><span class="unit">h</span></div>
                 </div>
                 <div class="stat">
                   <div class="k">完成轮次</div>
-                  <div class="v" id="sessionCount">0</div>
+                  <div class="v"><span id="sessionCount">0</span><span class="unit">次</span></div>
                 </div>
               </div>
 

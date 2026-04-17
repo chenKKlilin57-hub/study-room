@@ -8,6 +8,8 @@ export class Timer {
     this.selectedDuration = 7200;
     this.startedAt = null;
     this.timerMode = "countdown"; // "countdown" 或 "countup"
+    this.isFreeMode = false; // 专注计时模式（无限制）
+    this.elapsedInFreeMode = 0; // 专注计时模式下的累计时间
   }
 
   isRunning() {
@@ -36,6 +38,12 @@ export class Timer {
     if (this.isRunning()) return false;
     this.selectedDuration = seconds;
     this.remaining = seconds;
+    if (seconds === 0) {
+      this.isFreeMode = true;
+      this.elapsedInFreeMode = 0;
+    } else {
+      this.isFreeMode = false;
+    }
     return true;
   }
 
@@ -49,7 +57,9 @@ export class Timer {
 
   // 获取显示时间
   getDisplayTime() {
-    if (this.timerMode === "countdown") {
+    if (this.isFreeMode) {
+      return this.formatTime(this.elapsedInFreeMode);
+    } else if (this.timerMode === "countdown") {
       return this.formatTime(this.remaining);
     } else {
       const elapsed = this.selectedDuration - this.remaining;
@@ -64,14 +74,19 @@ export class Timer {
 
     this.startedAt = Date.now();
     this.timer = setInterval(async () => {
-      this.remaining -= 1;
-      if (onTick) onTick();
+      if (this.isFreeMode) {
+        this.elapsedInFreeMode += 1;
+        if (onTick) onTick();
+      } else {
+        this.remaining -= 1;
+        if (onTick) onTick();
 
-      if (this.remaining <= 0) {
-        this.stop();
-        const minutes = Math.floor(this.selectedDuration / 60);
-        if (onComplete) await onComplete(minutes);
-        this.reset(false);
+        if (this.remaining <= 0) {
+          this.stop();
+          const minutes = Math.floor(this.selectedDuration / 60);
+          if (onComplete) await onComplete(minutes);
+          this.reset(false);
+        }
       }
     }, 1000);
 
@@ -104,6 +119,8 @@ export class Timer {
       this.startedAt = null;
     }
     this.timerMode = "countdown";
+    this.isFreeMode = false;
+    this.elapsedInFreeMode = 0;
   }
 
   // 保存学习记录
