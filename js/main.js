@@ -335,8 +335,8 @@ async function loadMyStats() {
   const result = await timer.loadStats(getLocalDateISO);
   if (result.success) {
     currentTodayMinutes = result.today;
-    animateNumber(el.todayMinutes, result.today, 600, "min");
-    animateNumber(el.totalHours, result.total, 600, "h");
+    animateNumber(el.todayMinutes, result.today);
+    animateNumber(el.totalHours, result.total);
     animateNumber(el.sessionCount, result.sessionCount);
     updateProgress(result.today);
   }
@@ -438,11 +438,14 @@ async function addTask(text, dateStr, durationMinutes, priority) {
   const result = await taskManager.addTask(text, dateStr, durationMinutes, priority);
   if (!result.success) {
     showMessage(result.message);
+  } else {
+    await loadTasksByDate(dateStr);
   }
 }
 
 async function toggleTaskDone(taskId, done) {
   await taskManager.toggleTaskDone(taskId, done);
+  await loadTasksByDate(selectedTaskDate);
 }
 
 async function deleteTask(taskId) {
