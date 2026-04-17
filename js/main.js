@@ -336,7 +336,7 @@ async function loadMyStats() {
   if (result.success) {
     currentTodayMinutes = result.today;
     animateNumber(el.todayMinutes, result.today);
-    animateNumber(el.totalHours, result.total);
+    animateNumber(el.totalHours, Math.round(result.total / 60));
     animateNumber(el.sessionCount, result.sessionCount);
     updateProgress(result.today);
   }
