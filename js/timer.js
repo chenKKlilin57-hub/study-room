@@ -233,10 +233,13 @@ export class Timer {
       return { success: false, message: "请先登录" };
     }
 
+    // 确保至少保存 1 分钟
+    const validMinutes = Math.max(1, Math.floor(minutes));
+
     try {
       const payload = {
         user_id: currentUser.id,
-        duration_minutes: minutes,
+        duration_minutes: validMinutes,
         subject: subject,
         started_at: this.startedAt ? new Date(this.startedAt).toISOString() : null,
         ended_at: new Date().toISOString()
@@ -245,7 +248,7 @@ export class Timer {
       const { error } = await this.supabase.from("study_sessions").insert(payload);
       if (error) throw error;
 
-      const message = `已记录 ${minutes} 分钟学习时间${
+      const message = `已记录 ${validMinutes} 分钟学习时间${
         subject !== "未分类" ? `（${subject}）` : ""
       }。`;
 
