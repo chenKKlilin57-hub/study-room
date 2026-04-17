@@ -540,6 +540,91 @@ async function deleteTask(taskId) {
   await taskManager.deleteTask(taskId);
 }
 
+async function toggleSubtasks(taskId, toggleBtn) {
+  const container = document.getElementById(`subtasks-${taskId}`);
+  if (!container) return;
+
+  if (container.style.display === "none") {
+    // 展开：加载并显示子任务
+    toggleBtn.textContent = "▼";
+    const subtasks = await taskManager.getSubtasks(taskId);
+    container.innerHTML = "";
+    subtasks.forEach(subtask => {
+      renderSubtaskItem(subtask, container);
+    });
+    container.style.display = "block";
+  } else {
+    // 折叠
+    toggleBtn.textContent = "▶";
+    container.style.display = "none";
+  }
+}
+
+function renderSubtaskItem(subtask, container) {
+  const item = document.createElement("div");
+  item.className = "item subtask-item" + (subtask.done ? " task-done" : "");
+  item.style.paddingLeft = "52px";
+
+  const durationText = subtask.duration_minutes ? `${subtask.duration_minutes}分钟` : "";
+
+  item.innerHTML = `
+    <input type="checkbox" ${subtask.done ? "checked" : ""}>
+    <div class="main">
+      <div class="task-header">
+        <span class="task-text">${esc(subtask.text)}</span>
+        <span class="task-time">${durationText}</span>
+      </div>
+    </div>
+    <button class="btn ghost">删除</button>
+  `;
+
+  const checkbox = item.querySelector("input");
+  const delBtn = item.querySelector("button");
+
+  checkbox.addEventListener("change", () => {
+    toggleTaskDone(subtask.id, checkbox.checked);
+  });
+
+  delBtn.addEventListener("click", () => {
+    deleteTask(subtask.id);
+  });
+
+  container.appendChild(item);
+}
+
+function showAddSubtaskDialog(parentId) {
+  const text = prompt("输入子任务内容：");
+  if (!text || !text.trim()) return;
+
+  const duration = prompt("预计时长（分钟）：", "30");
+  const durationMinutes = parseInt(duration);
+  if (!durationMinutes || durationMinutes <= 0) {
+    showMessage("请输入有效的时长");
+    return;
+  }
+
+  addSubtask(text.trim(), selectedTaskDate, durationMinutes, "medium", parentId);
+}
+
+async function addSubtask(text, dateStr, durationMinutes, priority, parentId) {
+  const result = await taskManager.addTask(text, dateStr, durationMinutes, priority, parentId);
+  if (!result.success) {
+    showMessage(result.message);
+  } else {
+    await loadMyStats();
+    // 如果子任务容器已展开，刷新显示
+    const container = document.getElementById(`subtasks-${parentId}`);
+    if (container && container.style.display !== "none") {
+      const toggleBtn = document.querySelector(`[data-task-id="${parentId}"]`);
+      if (toggleBtn) {
+        container.style.display = "none";
+        toggleBtn.textContent = "▶";
+        await toggleSubtasks(parentId, toggleBtn);
+      }
+    }
+  }
+}
+
 async function changeTaskDate(days) {
   const d = new Date(selectedTaskDate + "T00:00:00");
   d.setDate(d.getDate() + days);
@@ -551,9 +636,9 @@ async function changeTaskDate(days) {
 function renderTasks() {
   const tasks = taskManager.getCurrentTasks();
   const stats = taskManager.getTaskStats();
-  
+
   el.taskList.innerHTML = "";
-  
+
   const dateObj = new Date(selectedTaskDate + "T00:00:00");
   const displayDate = `${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
 
@@ -587,40 +672,76 @@ function renderTasks() {
   }
 
   const sortedTasks = taskManager.getSortedTasks();
+  const parentTasks = sortedTasks.filter(t => !t.parent_id);
 
-  sortedTasks.forEach((task) => {
-    const item = document.createElement("div");
-    const priorityClass = task.priority || "medium";
-    item.className = "item task-priority-" + priorityClass + (task.done ? " task-done" : "");
-
-    const priorityBadgeClass = `priority-${priorityClass}`;
-    const durationText = task.duration_minutes ? `${task.duration_minutes}分钟` : "";
-
-    item.innerHTML = `
-      <input type="checkbox" ${task.done ? "checked" : ""}>
-      <div class="main">
-        <div class="task-header">
-          <span class="priority-badge ${priorityBadgeClass}"></span>
-          <span class="task-text">${esc(task.text)}</span>
-          <span class="task-time">${durationText}</span>
-        </div>
-      </div>
-      <button class="btn ghost">删除</button>
-    `;
-    
-    const checkbox = item.querySelector("input");
-    const delBtn = item.querySelector("button");
-    
-    checkbox.addEventListener("change", () => {
-      toggleTaskDone(task.id, checkbox.checked);
-    });
-    
-    delBtn.addEventListener("click", () => {
-      deleteTask(task.id);
-    });
-    
-    el.taskList.appendChild(item);
+  parentTasks.forEach((task) => {
+    renderTaskItem(task, 0);
   });
+}
+
+function renderTaskItem(task, level = 0) {
+  const item = document.createElement("div");
+  const priorityClass = task.priority || "medium";
+  item.className = "item task-priority-" + priorityClass + (task.done ? " task-done" : "");
+  item.style.paddingLeft = `${level * 20 + 12}px`;
+
+  const priorityBadgeClass = `priority-${priorityClass}`;
+  const durationText = task.duration_minutes ? `${task.duration_minutes}分钟` : "";
+
+  const hasSubtasks = task.subtask_count > 0;
+  const progressPercent = hasSubtasks && task.subtask_count > 0
+    ? Math.round((task.completed_subtask_count / task.subtask_count) * 100)
+    : 0;
+
+  item.innerHTML = `
+    <input type="checkbox" ${task.done ? "checked" : ""}>
+    <div class="main">
+      <div class="task-header">
+        ${hasSubtasks ? `<span class="task-toggle" data-task-id="${task.id}">▶</span>` : ''}
+        <span class="priority-badge ${priorityBadgeClass}"></span>
+        <span class="task-text">${esc(task.text)}</span>
+        <span class="task-time">${durationText}</span>
+        ${hasSubtasks ? `<span class="task-progress">${task.completed_subtask_count}/${task.subtask_count}</span>` : ''}
+      </div>
+      ${hasSubtasks ? `<div class="task-progress-bar"><div class="task-progress-fill" style="width: ${progressPercent}%"></div></div>` : ''}
+    </div>
+    <button class="btn ghost btn-add-subtask" data-task-id="${task.id}">+子</button>
+    <button class="btn ghost">删除</button>
+  `;
+
+  const checkbox = item.querySelector("input");
+  const delBtn = item.querySelectorAll("button")[1];
+  const addSubtaskBtn = item.querySelector(".btn-add-subtask");
+  const toggleBtn = item.querySelector(".task-toggle");
+
+  checkbox.addEventListener("change", () => {
+    toggleTaskDone(task.id, checkbox.checked);
+  });
+
+  delBtn.addEventListener("click", () => {
+    deleteTask(task.id);
+  });
+
+  addSubtaskBtn.addEventListener("click", () => {
+    showAddSubtaskDialog(task.id);
+  });
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      toggleSubtasks(task.id, toggleBtn);
+    });
+  }
+
+  el.taskList.appendChild(item);
+
+  // 渲染子任务容器（初始隐藏）
+  if (hasSubtasks) {
+    const subtaskContainer = document.createElement("div");
+    subtaskContainer.className = "subtask-container";
+    subtaskContainer.id = `subtasks-${task.id}`;
+    subtaskContainer.style.display = "none";
+    el.taskList.appendChild(subtaskContainer);
+  }
 }
 
 // 签到功能

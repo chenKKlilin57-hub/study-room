@@ -46,7 +46,7 @@ export class TaskManager {
   }
 
   // 添加任务
-  async addTask(text, dateStr, durationMinutes, priority = "medium") {
+  async addTask(text, dateStr, durationMinutes, priority = "medium", parentId = null) {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser) {
       return { success: false, message: "请先登录。" };
@@ -56,18 +56,25 @@ export class TaskManager {
     }
 
     try {
-      const { error } = await this.supabase.from("tasks").insert({
+      const { data, error } = await this.supabase.from("tasks").insert({
         user_id: currentUser.id,
         task_date: dateStr,
         text: text,
         done: false,
         duration_minutes: durationMinutes,
-        priority: priority || "medium"
-      });
+        priority: priority || "medium",
+        parent_id: parentId
+      }).select();
 
       if (error) throw error;
+
+      // 如果是子任务，更新父任务进度
+      if (parentId) {
+        await this.updateParentProgress(parentId);
+      }
+
       await this.loadTasksByDate(dateStr);
-      return { success: true };
+      return { success: true, data: data[0] };
     } catch (err) {
       console.error("addTask error:", err);
       return { success: false, message: "添加任务失败，请稍后重试。" };
@@ -146,5 +153,86 @@ export class TaskManager {
       if (aPriority !== bPriority) return aPriority - bPriority;
       return new Date(b.created_at) - new Date(a.created_at);
     });
+  }
+
+  // 获取任务的子任务
+  async getSubtasks(parentId) {
+    const currentUser = this.auth.getCurrentUser();
+    if (!currentUser) return [];
+
+    try {
+      const { data, error } = await this.supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .eq("parent_id", parentId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.error("getSubtasks error:", err);
+      return [];
+    }
+  }
+
+  // 更新父任务进度
+  async updateParentProgress(parentId) {
+    const currentUser = this.auth.getCurrentUser();
+    if (!currentUser) return;
+
+    try {
+      const subtasks = await this.getSubtasks(parentId);
+      const subtaskCount = subtasks.length;
+      const completedSubtaskCount = subtasks.filter(t => t.done).length;
+
+      await this.supabase
+        .from("tasks")
+        .update({
+          subtask_count: subtaskCount,
+          completed_subtask_count: completedSubtaskCount
+        })
+        .eq("id", parentId)
+        .eq("user_id", currentUser.id);
+    } catch (err) {
+      console.error("updateParentProgress error:", err);
+    }
+  }
+
+  // 切换任务完成状态（更新版本，支持子任务）
+  async toggleTaskDone(taskId, done) {
+    const currentUser = this.auth.getCurrentUser();
+    if (!currentUser) {
+      return { success: false, message: "请先登录。" };
+    }
+
+    try {
+      // 获取任务信息
+      const { data: task } = await this.supabase
+        .from("tasks")
+        .select("parent_id")
+        .eq("id", taskId)
+        .single();
+
+      // 更新任务状态
+      const { error } = await this.supabase
+        .from("tasks")
+        .update({ done })
+        .eq("id", taskId)
+        .eq("user_id", currentUser.id);
+
+      if (error) throw error;
+
+      // 如果是子任务，更新父任务进度
+      if (task && task.parent_id) {
+        await this.updateParentProgress(task.parent_id);
+      }
+
+      await this.loadTasksByDate(this.selectedTaskDate);
+      return { success: true };
+    } catch (err) {
+      console.error("toggleTaskDone error:", err);
+      return { success: false, message: "更新任务失败，请稍后重试。" };
+    }
   }
 }
