@@ -60,10 +60,17 @@ const formatMinutes = (min) => {
   return m ? `${h}h ${m}m` : `${h}h`;
 };
 
+const getBeijingDate = (utcDate = new Date()) => {
+  // UTC+8，无论用户设备时区
+  const offset = 8 * 60 * 60 * 1000;
+  return new Date(utcDate.getTime() + offset);
+};
+
 const getLocalDateISO = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const bj = getBeijingDate(date instanceof Function ? date() : date);
+  const year  = bj.getUTCFullYear();
+  const month = String(bj.getUTCMonth() + 1).padStart(2, "0");
+  const day   = String(bj.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
@@ -497,21 +504,24 @@ async function loadWeeklyChart() {
     return;
   }
 
-  // Build last 7 days date range (Mon–Sun of current week)
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=Sun
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+  // 本周周一到周日（北京时间）
+  const nowBJ = getBeijingDate();
+  const dayOfWeek = nowBJ.getUTCDay(); // 0=Sun
+  const mondayBJ = new Date(nowBJ.getTime() - ((dayOfWeek + 6) % 7) * 86400000);
 
   const days = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    days.push(d.toISOString().split("T")[0]);
+    const d = new Date(mondayBJ.getTime() + i * 86400000);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    days.push(`${y}-${m}-${day}`);
   }
 
-  const startISO = new Date(days[0] + "T00:00:00").toISOString();
-  const endISO   = new Date(days[6] + "T23:59:59").toISOString();
+  // 查询范围：周一 00:00 ~ 周日 23:59:59（北京时间转 UTC）
+  const BJOffset = 8 * 3600000;
+  const startISO = new Date(new Date(days[0] + "T00:00:00Z").getTime() - BJOffset).toISOString();
+  const endISO   = new Date(new Date(days[6] + "T23:59:59Z").getTime() - BJOffset).toISOString();
 
   try {
     const { data, error } = await supabase
@@ -527,8 +537,8 @@ async function loadWeeklyChart() {
     days.forEach(d => { minutesByDay[d] = 0; });
     (data || []).forEach(row => {
       if (!row.ended_at) return;
-      const local = new Date(row.ended_at);
-      const dayKey = `${local.getFullYear()}-${String(local.getMonth()+1).padStart(2,"0")}-${String(local.getDate()).padStart(2,"0")}`;
+      const bjDate = getBeijingDate(new Date(row.ended_at));
+      const dayKey = `${bjDate.getUTCFullYear()}-${String(bjDate.getUTCMonth()+1).padStart(2,"0")}-${String(bjDate.getUTCDate()).padStart(2,"0")}`;
       if (minutesByDay[dayKey] !== undefined) {
         minutesByDay[dayKey] += row.duration_minutes || 0;
       }
