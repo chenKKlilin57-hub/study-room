@@ -38,7 +38,19 @@ const loadJSON = (k, f) => {
 };
 
 const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-const showMessage = (m) => alert(m);
+let msgToastTimer = null;
+const showMessage = (m, type = "") => {
+  const el = document.getElementById("msgToast");
+  if (!el) return;
+  if (msgToastTimer) clearTimeout(msgToastTimer);
+  el.textContent = m;
+  el.className = "msg-toast" + (type ? ` ${type}` : "");
+  el.classList.add("show");
+  msgToastTimer = setTimeout(() => {
+    el.classList.remove("show");
+    msgToastTimer = null;
+  }, 3000);
+};
 const esc = (s) => String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
 
 const formatMinutes = (min) => {
@@ -377,22 +389,22 @@ async function signup() {
   const result = await auth.signup(username, email, password);
   setButtonLoading(el.signupBtn, "", false);
   
-  showMessage(result.message);
+  showMessage(result.message, result.success ? "ok" : "error");
 }
 
 async function login() {
   if (!appReady || auth.isLoading()) return;
   const email = el.loginEmail.value.trim();
   const password = el.loginPassword.value.trim();
-  
+
   setButtonLoading(el.loginBtn, "登录中...", true);
   const result = await auth.login(email, password);
   setButtonLoading(el.loginBtn, "", false);
-  
+
   if (result.success) {
     updateAuthUI();
   } else {
-    showMessage(result.message);
+    showMessage(result.message, "error");
   }
 }
 
@@ -407,7 +419,7 @@ async function saveStudySession(minutes) {
   const subject = subjectInput ? subjectInput.value.trim() || "未分类" : "未分类";
   
   const result = await timer.saveSession(minutes, subject);
-  showMessage(result.message);
+  showMessage(result.message, result.success ? "ok" : "error");
   
   if (result.success) {
     await loadMyStats();
@@ -863,9 +875,9 @@ async function handleCheckin() {
   setButtonLoading(el.checkinBtn, "签到中...", true);
   const result = await auth.checkin(currentTodayMinutes, getLocalDateISO);
   setButtonLoading(el.checkinBtn, "", false);
-  
-  showMessage(result.message);
-  
+
+  showMessage(result.message, result.success ? "ok" : "error");
+
   if (result.success) {
     await loadCheckinInfo();
   }
@@ -1495,7 +1507,7 @@ async function main() {
     
     // 每日提醒
     if (!localStorage.getItem("today_opened_v2_" + getLocalDateISO())) {
-      setTimeout(() => alert("今天也要保持专注哦 🔥"), 500);
+      setTimeout(() => showMessage("今天也要保持专注 🔥"), 800);
       localStorage.setItem("today_opened_v2_" + getLocalDateISO(), "true");
     }
     
