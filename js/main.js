@@ -1307,6 +1307,9 @@ function bindCommon() {
       }
     });
   }
+
+  // 任务日期
+  el.taskDatePicker.addEventListener("change", async (e) => {
     if (e.target.value) {
       selectedTaskDate = e.target.value;
       await loadTasksByDate(selectedTaskDate);
