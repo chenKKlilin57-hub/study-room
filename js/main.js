@@ -690,6 +690,53 @@ async function changeTaskDate(days) {
   selectedTaskDate = getLocalDateISO(d);
   el.taskDatePicker.value = selectedTaskDate;
   await loadTasksByDate(selectedTaskDate);
+  await loadReview(selectedTaskDate);
+}
+
+// 复盘
+async function loadReview(date) {
+  const reviewInput  = document.getElementById("reviewInput");
+  const dateLabel    = document.getElementById("reviewDateLabel");
+  const today        = getLocalDateISO();
+  if (!reviewInput) return;
+
+  dateLabel.textContent = date === today ? "今天" : date;
+  const user = auth.getCurrentUser();
+
+  if (user) {
+    const { data } = await supabase
+      .from("daily_reviews")
+      .select("content")
+      .eq("user_id", user.id)
+      .eq("review_date", date)
+      .maybeSingle();
+    reviewInput.value = data?.content ?? "";
+  } else {
+    reviewInput.value = localStorage.getItem("review_" + date) || "";
+  }
+}
+
+async function saveReview(date) {
+  const reviewInput = document.getElementById("reviewInput");
+  const saveBtn     = document.getElementById("saveReviewBtn");
+  if (!reviewInput) return;
+
+  const content = reviewInput.value;
+  const user    = auth.getCurrentUser();
+
+  if (user) {
+    await supabase.from("daily_reviews").upsert(
+      { user_id: user.id, review_date: date, content, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,review_date" }
+    );
+  } else {
+    localStorage.setItem("review_" + date, content);
+  }
+
+  if (saveBtn) {
+    saveBtn.textContent = "已保存";
+    setTimeout(() => { saveBtn.textContent = "保存"; }, 1500);
+  }
 }
 
 function openEditDrawer(task) {
@@ -1325,14 +1372,22 @@ function bindCommon() {
     if (e.target.value) {
       selectedTaskDate = e.target.value;
       await loadTasksByDate(selectedTaskDate);
+      await loadReview(selectedTaskDate);
     }
   });
   el.goTodayBtn.addEventListener("click", async () => {
     selectedTaskDate = getLocalDateISO();
     el.taskDatePicker.value = selectedTaskDate;
     await loadTasksByDate(selectedTaskDate);
+    await loadReview(selectedTaskDate);
   });
   el.goYesterdayBtn.addEventListener("click", () => changeTaskDate(-1));
+
+  // 复盘保存按钮
+  const saveReviewBtn = document.getElementById("saveReviewBtn");
+  if (saveReviewBtn) {
+    saveReviewBtn.addEventListener("click", () => saveReview(selectedTaskDate));
+  }
 
   // 排行榜切换
   el.dailyRankTab.addEventListener("click", () => {
@@ -1463,7 +1518,8 @@ async function refreshSession() {
         loadHistory(),
         loadCheckinInfo(),
         loadLeaderboard(),
-        loadTasksByDate(selectedTaskDate)
+        loadTasksByDate(selectedTaskDate),
+        loadReview(selectedTaskDate)
       ]);
 
       // 恢复计时状态

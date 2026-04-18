@@ -1506,39 +1506,6 @@
   </div>
 
   <script type="module" src="./js/main.js"></script>
-  <script>
-    (function() {
-      const reviewInput   = document.getElementById('reviewInput');
-      const saveReviewBtn = document.getElementById('saveReviewBtn');
-      const dateLabel     = document.getElementById('reviewDateLabel');
-      const today         = new Date().toISOString().slice(0, 10);
-      let currentDate     = today;
-
-      function loadReview(date) {
-        currentDate = date;
-        reviewInput.value = localStorage.getItem('review_' + date) || '';
-        dateLabel.textContent = date === today ? '今天' : date;
-      }
-
-      saveReviewBtn.addEventListener('click', () => {
-        localStorage.setItem('review_' + currentDate, reviewInput.value);
-        saveReviewBtn.textContent = '已保存';
-        setTimeout(() => saveReviewBtn.textContent = '保存', 1500);
-      });
-
-      window.addEventListener('load', () => {
-        const picker = document.getElementById('taskDatePicker');
-        // picker 手动选择时触发
-        picker.addEventListener('change', () => loadReview(picker.value));
-        // 翻页按钮（昨天/今天）由 main.js 直接设 picker.value，不触发 change，用 setTimeout 跟读
-        document.querySelectorAll('#goYesterdayBtn, #goTomorrowBtn').forEach(btn => {
-          btn.addEventListener('click', () => setTimeout(() => loadReview(picker.value), 80));
-        });
-        // 初始：等 main.js 把 picker 初始化完后再读
-        setTimeout(() => loadReview(picker.value || today), 150);
-      });
-    })();
-  </script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>
