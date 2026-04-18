@@ -436,7 +436,8 @@ async function loadMyStats() {
   const result = await timer.loadStats(getLocalDateISO);
   if (result.success) {
     currentTodayMinutes = result.today;
-    animateNumber(el.todayMinutes, result.today);
+    const todayHours = (result.today / 60).toFixed(1);
+    el.todayMinutes.textContent = todayHours;
     animateNumber(el.totalHours, Math.round(result.total / 60));
     animateNumber(el.sessionCount, result.sessionCount);
     updateProgress(result.today);
