@@ -492,18 +492,32 @@
     }
 
     .subtask-container {
-      margin-top: -1px;
+      margin-left: 22px;
+      margin-top: 2px;
+      padding-left: 14px;
+      border-left: 2px solid rgba(180,107,93,0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-bottom: 4px;
     }
 
     .subtask-item {
-      border-top: none;
-      border-radius: 0;
-      background: var(--bg);
-      opacity: 0.95;
+      font-size: 13px;
+      border-radius: var(--radius-card) !important;
+      background: rgba(180,107,93,0.03) !important;
+      border-color: rgba(180,107,93,0.12) !important;
+      opacity: 1;
+      padding: 10px 12px !important;
     }
 
-    .subtask-item:last-child {
-      border-radius: 0 0 var(--radius-card) var(--radius-card);
+    .subtask-item .task-text {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    body.dark .subtask-item {
+      background: rgba(255,255,255,0.03) !important;
     }
 
     .task-progress {
@@ -1106,6 +1120,15 @@
       from { opacity: 0; }
       to { opacity: 1; }
     }
+
+    @keyframes celebrate-bounce {
+      0%, 100% { transform: scale(1); }
+      40% { transform: scale(1.03); }
+    }
+
+    .list.celebrate {
+      animation: celebrate-bounce 0.5s ease;
+    }
   </style>
 </head>
 <body>
@@ -1184,6 +1207,13 @@
                 <div style="margin-top:14px; display:flex; gap:8px; justify-content:center; align-items:center;">
                   <span style="font-size:13px; color:var(--muted);">科目：</span>
                   <input id="customSubjectInput" type="text" placeholder="输入科目（如：数学）" style="width:140px;padding:8px 12px;font-size:13px;border-radius:12px;text-align:center;" />
+                </div>
+
+                <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center;">
+                  <span style="font-size:13px; color:var(--muted);">关联任务：</span>
+                  <select id="taskLinkSelect" style="padding:8px 12px;font-size:13px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);max-width:180px;">
+                    <option value="">不关联</option>
+                  </select>
                 </div>
 
                 <div class="controls" style="margin-top:10px">
@@ -1449,5 +1479,59 @@
 
     <button class="btn primary" id="drawerAddBtn" style="width:100%; padding:14px; margin-top:8px;">添加任务</button>
   </div>
+  <!-- 编辑任务抽屉 -->
+  <div class="drawer-overlay" id="editDrawerOverlay"></div>
+  <div class="task-drawer" id="editTaskDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">编辑任务</div>
+      <button class="drawer-close" id="closeEditDrawerBtn">×</button>
+    </div>
+    <input type="hidden" id="editTaskId" />
+    <div class="drawer-field">
+      <label class="drawer-label">任务内容</label>
+      <input class="drawer-input" id="editTaskInput" type="text" />
+    </div>
+    <div class="drawer-field">
+      <label class="drawer-label">预计时长（分钟）</label>
+      <input class="drawer-input" id="editTimeInput" type="number" min="1" max="600" />
+    </div>
+    <div class="drawer-field">
+      <label class="drawer-label">优先级</label>
+      <div class="drawer-priority-grid">
+        <button class="drawer-priority-btn" data-edit-priority="high">🔴 优先做</button>
+        <button class="drawer-priority-btn active-medium" data-edit-priority="medium">🟡 重点做</button>
+        <button class="drawer-priority-btn" data-edit-priority="low">⚪ 有时间做</button>
+      </div>
+    </div>
+    <button class="btn primary" id="saveEditBtn" style="width:100%; padding:14px; margin-top:8px;">保存</button>
+  </div>
+
+  <!-- 添加子任务抽屉 -->
+  <div class="drawer-overlay" id="subtaskDrawerOverlay"></div>
+  <div class="task-drawer" id="subtaskDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">添加子任务</div>
+      <button class="drawer-close" id="closeSubtaskDrawerBtn">×</button>
+    </div>
+    <input type="hidden" id="subtaskParentId" />
+    <div class="drawer-field">
+      <label class="drawer-label">子任务内容</label>
+      <input class="drawer-input" id="subtaskInput" type="text" placeholder="输入子任务内容..." />
+    </div>
+    <div class="drawer-field">
+      <label class="drawer-label">预计时长（分钟）</label>
+      <input class="drawer-input" id="subtaskTimeInput" type="number" min="1" max="600" placeholder="例如：30" />
+    </div>
+    <div class="drawer-field">
+      <label class="drawer-label">优先级</label>
+      <div class="drawer-priority-grid">
+        <button class="drawer-priority-btn" data-subtask-priority="high">🔴 优先做</button>
+        <button class="drawer-priority-btn active-medium" data-subtask-priority="medium">🟡 重点做</button>
+        <button class="drawer-priority-btn" data-subtask-priority="low">⚪ 有时间做</button>
+      </div>
+    </div>
+    <button class="btn primary" id="addSubtaskDrawerBtn" style="width:100%; padding:14px; margin-top:8px;">添加子任务</button>
+  </div>
+
 </body>
 </html>

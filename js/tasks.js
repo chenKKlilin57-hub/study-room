@@ -207,14 +207,12 @@ export class TaskManager {
     }
 
     try {
-      // 获取任务信息
       const { data: task } = await this.supabase
         .from("tasks")
         .select("parent_id")
         .eq("id", taskId)
         .single();
 
-      // 更新任务状态
       const { error } = await this.supabase
         .from("tasks")
         .update({ done })
@@ -223,7 +221,6 @@ export class TaskManager {
 
       if (error) throw error;
 
-      // 如果是子任务，更新父任务进度
       if (task && task.parent_id) {
         await this.updateParentProgress(task.parent_id);
       }
@@ -234,5 +231,31 @@ export class TaskManager {
       console.error("toggleTaskDone error:", err);
       return { success: false, message: "更新任务失败，请稍后重试。" };
     }
+  }
+
+  // 编辑任务
+  async editTask(taskId, text, durationMinutes, priority) {
+    const currentUser = this.auth.getCurrentUser();
+    if (!currentUser) return { success: false, message: "请先登录。" };
+
+    try {
+      const { error } = await this.supabase
+        .from("tasks")
+        .update({ text, duration_minutes: durationMinutes, priority })
+        .eq("id", taskId)
+        .eq("user_id", currentUser.id);
+
+      if (error) throw error;
+      await this.loadTasksByDate(this.selectedTaskDate);
+      return { success: true };
+    } catch (err) {
+      console.error("editTask error:", err);
+      return { success: false, message: "编辑任务失败，请稍后重试。" };
+    }
+  }
+
+  // 临时移除任务（乐观UI，用于undo）
+  removeTaskLocally(taskId) {
+    this.currentTasks = this.currentTasks.filter(t => t.id !== taskId);
   }
 }

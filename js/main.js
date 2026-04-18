@@ -22,6 +22,7 @@ let currentRankType = "daily";
 let dailyGoal = 240;
 let currentTodayMinutes = 0;
 let undoTimer = null;
+let pendingTaskDelete = null; // { taskId }
 
 // DOM 元素选择器
 const $ = (id) => document.getElementById(id);
@@ -537,7 +538,48 @@ async function toggleTaskDone(taskId, done) {
 }
 
 async function deleteTask(taskId) {
-  await taskManager.deleteTask(taskId);
+  // 如果有上一个待删除，立即执行
+  if (pendingTaskDelete) {
+    await taskManager.deleteTask(pendingTaskDelete.taskId);
+    pendingTaskDelete = null;
+  }
+  if (undoTimer) {
+    clearTimeout(undoTimer);
+    undoTimer = null;
+  }
+
+  // 乐观移除
+  taskManager.removeTaskLocally(taskId);
+  renderTasks();
+
+  // 显示 undo toast
+  const toast = document.getElementById("undoToast");
+  const msg = document.getElementById("undoToastMsg");
+  const bar = document.getElementById("undoBar");
+  const undoBtn = document.getElementById("undoBtn");
+
+  pendingTaskDelete = { taskId };
+  msg.textContent = "已删除任务";
+  toast.classList.add("show");
+  bar.style.animation = "none";
+  bar.offsetHeight;
+  bar.style.animation = "";
+
+  undoBtn.onclick = () => {
+    clearTimeout(undoTimer);
+    undoTimer = null;
+    pendingTaskDelete = null;
+    hideUndoToast();
+    loadTasksByDate(selectedTaskDate);
+  };
+
+  undoTimer = setTimeout(async () => {
+    if (pendingTaskDelete) {
+      await taskManager.deleteTask(pendingTaskDelete.taskId);
+      pendingTaskDelete = null;
+    }
+    hideUndoToast();
+  }, 5000);
 }
 
 async function toggleSubtasks(taskId, toggleBtn) {
@@ -575,14 +617,20 @@ function renderSubtaskItem(subtask, container) {
         <span class="task-time">${durationText}</span>
       </div>
     </div>
+    <button class="btn ghost btn-edit-task">编辑</button>
     <button class="btn ghost">删除</button>
   `;
 
   const checkbox = item.querySelector("input");
-  const delBtn = item.querySelector("button");
+  const editBtn = item.querySelector(".btn-edit-task");
+  const delBtn = item.querySelectorAll("button")[1];
 
   checkbox.addEventListener("change", () => {
     toggleTaskDone(subtask.id, checkbox.checked);
+  });
+
+  editBtn.addEventListener("click", () => {
+    openEditDrawer(subtask);
   });
 
   delBtn.addEventListener("click", () => {
@@ -593,17 +641,16 @@ function renderSubtaskItem(subtask, container) {
 }
 
 function showAddSubtaskDialog(parentId) {
-  const text = prompt("输入子任务内容：");
-  if (!text || !text.trim()) return;
-
-  const duration = prompt("预计时长（分钟）：", "30");
-  const durationMinutes = parseInt(duration);
-  if (!durationMinutes || durationMinutes <= 0) {
-    showMessage("请输入有效的时长");
-    return;
-  }
-
-  addSubtask(text.trim(), selectedTaskDate, durationMinutes, "medium", parentId);
+  document.getElementById("subtaskParentId").value = parentId;
+  document.getElementById("subtaskInput").value = "";
+  document.getElementById("subtaskTimeInput").value = "";
+  // 重置优先级为 medium
+  document.querySelectorAll("[data-subtask-priority]").forEach(b => {
+    b.classList.remove("active-high", "active-medium", "active-low");
+  });
+  document.querySelector("[data-subtask-priority='medium']").classList.add("active-medium");
+  document.getElementById("subtaskDrawer").classList.add("show");
+  document.getElementById("subtaskDrawerOverlay").classList.add("show");
 }
 
 async function addSubtask(text, dateStr, durationMinutes, priority, parentId) {
@@ -633,6 +680,34 @@ async function changeTaskDate(days) {
   await loadTasksByDate(selectedTaskDate);
 }
 
+function openEditDrawer(task) {
+  document.getElementById("editTaskId").value = task.id;
+  document.getElementById("editTaskInput").value = task.text;
+  document.getElementById("editTimeInput").value = task.duration_minutes || "";
+  const priority = task.priority || "medium";
+  document.querySelectorAll("[data-edit-priority]").forEach(b => {
+    b.classList.remove("active-high", "active-medium", "active-low");
+  });
+  document.querySelector(`[data-edit-priority='${priority}']`).classList.add(`active-${priority}`);
+  document.getElementById("editTaskDrawer").classList.add("show");
+  document.getElementById("editDrawerOverlay").classList.add("show");
+}
+
+function updateTaskLinkSelect() {
+  const select = document.getElementById("taskLinkSelect");
+  if (!select) return;
+  const current = select.value;
+  const tasks = taskManager.getCurrentTasks().filter(t => !t.parent_id && !t.done);
+  select.innerHTML = '<option value="">不关联</option>';
+  tasks.forEach(task => {
+    const opt = document.createElement("option");
+    opt.value = task.id;
+    opt.textContent = task.text.length > 18 ? task.text.slice(0, 18) + "…" : task.text;
+    select.appendChild(opt);
+  });
+  select.value = current;
+}
+
 function renderTasks() {
   const tasks = taskManager.getCurrentTasks();
   const stats = taskManager.getTaskStats();
@@ -651,6 +726,11 @@ function renderTasks() {
   }
 
   el.taskStatsText.textContent = `${displayDate} · 已完成 ${stats.done} / ${stats.total} 项 (${stats.percentage}%)`;
+  if (stats.percentage === 100) {
+    el.taskStatsText.textContent = `${displayDate} · 全部完成 🎉`;
+    el.taskList.classList.add("celebrate");
+    setTimeout(() => el.taskList.classList.remove("celebrate"), 600);
+  }
   el.taskStatsText.style.color = stats.percentage === 100 ? "var(--ok)" : "var(--accent)";
 
   const hours = Math.floor(stats.totalMinutes / 60);
@@ -677,6 +757,8 @@ function renderTasks() {
   parentTasks.forEach((task) => {
     renderTaskItem(task, 0);
   });
+
+  updateTaskLinkSelect();
 }
 
 function renderTaskItem(task, level = 0) {
@@ -706,12 +788,14 @@ function renderTaskItem(task, level = 0) {
       ${hasSubtasks ? `<div class="task-progress-bar"><div class="task-progress-fill" style="width: ${progressPercent}%"></div></div>` : ''}
     </div>
     <button class="btn ghost btn-add-subtask" data-task-id="${task.id}">+子</button>
+    <button class="btn ghost btn-edit-task">编辑</button>
     <button class="btn ghost">删除</button>
   `;
 
   const checkbox = item.querySelector("input");
-  const delBtn = item.querySelectorAll("button")[1];
   const addSubtaskBtn = item.querySelector(".btn-add-subtask");
+  const editBtn = item.querySelector(".btn-edit-task");
+  const delBtn = item.querySelectorAll("button")[2];
   const toggleBtn = item.querySelector(".task-toggle");
 
   checkbox.addEventListener("change", () => {
@@ -724,6 +808,10 @@ function renderTaskItem(task, level = 0) {
 
   addSubtaskBtn.addEventListener("click", () => {
     showAddSubtaskDialog(task.id);
+  });
+
+  editBtn.addEventListener("click", () => {
+    openEditDrawer(task);
   });
 
   if (toggleBtn) {
@@ -1133,8 +1221,92 @@ function bindCommon() {
     });
   }
 
-  // 任务日期
-  el.taskDatePicker.addEventListener("change", async (e) => {
+  // 编辑任务抽屉
+  let selectedEditPriority = "medium";
+
+  document.getElementById("closeEditDrawerBtn").addEventListener("click", () => {
+    document.getElementById("editTaskDrawer").classList.remove("show");
+    document.getElementById("editDrawerOverlay").classList.remove("show");
+  });
+  document.getElementById("editDrawerOverlay").addEventListener("click", () => {
+    document.getElementById("editTaskDrawer").classList.remove("show");
+    document.getElementById("editDrawerOverlay").classList.remove("show");
+  });
+
+  document.querySelectorAll("[data-edit-priority]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-edit-priority]").forEach(b =>
+        b.classList.remove("active-high", "active-medium", "active-low"));
+      selectedEditPriority = btn.dataset.editPriority;
+      btn.classList.add(`active-${selectedEditPriority}`);
+    });
+  });
+
+  document.getElementById("saveEditBtn").addEventListener("click", async () => {
+    const taskId = document.getElementById("editTaskId").value;
+    const text = document.getElementById("editTaskInput").value.trim();
+    const duration = parseInt(document.getElementById("editTimeInput").value);
+    const priority = document.querySelector("[data-edit-priority].active-high, [data-edit-priority].active-medium, [data-edit-priority].active-low")?.dataset.editPriority || "medium";
+
+    if (!text) { showMessage("请输入任务内容。"); return; }
+    if (!duration || duration <= 0) { showMessage("请输入有效时长。"); return; }
+
+    const result = await taskManager.editTask(taskId, text, duration, priority);
+    if (!result.success) { showMessage(result.message); return; }
+
+    document.getElementById("editTaskDrawer").classList.remove("show");
+    document.getElementById("editDrawerOverlay").classList.remove("show");
+    renderTasks();
+  });
+
+  // 子任务抽屉
+  let selectedSubtaskPriority = "medium";
+
+  document.getElementById("closeSubtaskDrawerBtn").addEventListener("click", () => {
+    document.getElementById("subtaskDrawer").classList.remove("show");
+    document.getElementById("subtaskDrawerOverlay").classList.remove("show");
+  });
+  document.getElementById("subtaskDrawerOverlay").addEventListener("click", () => {
+    document.getElementById("subtaskDrawer").classList.remove("show");
+    document.getElementById("subtaskDrawerOverlay").classList.remove("show");
+  });
+
+  document.querySelectorAll("[data-subtask-priority]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-subtask-priority]").forEach(b =>
+        b.classList.remove("active-high", "active-medium", "active-low"));
+      selectedSubtaskPriority = btn.dataset.subtaskPriority;
+      btn.classList.add(`active-${selectedSubtaskPriority}`);
+    });
+  });
+
+  document.getElementById("addSubtaskDrawerBtn").addEventListener("click", async () => {
+    const parentId = document.getElementById("subtaskParentId").value;
+    const text = document.getElementById("subtaskInput").value.trim();
+    const duration = parseInt(document.getElementById("subtaskTimeInput").value);
+
+    if (!text) { showMessage("请输入子任务内容。"); return; }
+    if (!duration || duration <= 0) { showMessage("请输入有效时长。"); return; }
+
+    await addSubtask(text, selectedTaskDate, duration, selectedSubtaskPriority, parentId);
+
+    document.getElementById("subtaskDrawer").classList.remove("show");
+    document.getElementById("subtaskDrawerOverlay").classList.remove("show");
+  });
+
+  // 关联任务选择器
+  const taskLinkSelect = document.getElementById("taskLinkSelect");
+  if (taskLinkSelect) {
+    taskLinkSelect.addEventListener("change", () => {
+      const taskId = taskLinkSelect.value;
+      if (!taskId) return;
+      const task = taskManager.getCurrentTasks().find(t => t.id === taskId);
+      if (task) {
+        const subjectInput = document.getElementById("customSubjectInput");
+        if (subjectInput) subjectInput.value = task.text.slice(0, 20);
+      }
+    });
+  }
     if (e.target.value) {
       selectedTaskDate = e.target.value;
       await loadTasksByDate(selectedTaskDate);
