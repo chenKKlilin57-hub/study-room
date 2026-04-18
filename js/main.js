@@ -545,7 +545,7 @@ async function loadWeeklyChart() {
       const isToday = days[i] === todayStr;
 
       const bar = document.createElement("div");
-      bar.style.cssText = `flex:1;border-radius:6px 6px 0 0;background:${isToday ? "var(--accent)" : "var(--line)"};height:${heightPct}%;min-height:${mins > 0 ? "6px" : "2px"};opacity:${isToday ? "1" : "0.7"};transition:height 0.5s ease;cursor:default;`;
+      bar.style.cssText = `flex:1;border-radius:6px 6px 0 0;background:${isToday ? "var(--accent)" : "rgba(180,107,93,0.22)"};height:${heightPct}%;min-height:${mins > 0 ? "6px" : "2px"};transition:height 0.5s ease;cursor:default;`;
       bar.title = `${DAY_LABELS[i]}：${formatMinutes(mins)}`;
       barChart.appendChild(bar);
 
