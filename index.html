@@ -1408,10 +1408,22 @@
 
               <div id="reviewArea" style="margin-top:16px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                  <span style="font-size:14px;font-weight:600;">今日复盘</span>
-                  <button class="btn ghost" id="saveReviewBtn" style="padding:6px 12px;font-size:13px;">保存</button>
+                  <span style="font-size:14px;font-weight:600;">复盘</span>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="btn ghost" id="reviewHistoryBtn" style="padding:6px 12px;font-size:13px;">历史</button>
+                    <button class="btn ghost" id="saveReviewBtn" style="padding:6px 12px;font-size:13px;">保存</button>
+                  </div>
+                </div>
+                <div id="reviewDateBar" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                  <button id="reviewPrevBtn" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;padding:0 4px;">‹</button>
+                  <span id="reviewDateLabel" style="font-size:13px;color:var(--text-muted);flex:1;text-align:center;"></span>
+                  <button id="reviewNextBtn" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;padding:0 4px;">›</button>
                 </div>
                 <textarea id="reviewInput" placeholder="今天学了什么？有什么收获或问题？" style="width:100%;min-height:90px;padding:12px;font-size:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);resize:vertical;font-family:inherit;line-height:1.6;outline:none;"></textarea>
+                <!-- 历史列表面板 -->
+                <div id="reviewHistoryPanel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;">
+                  <div id="reviewHistoryList" style="max-height:260px;overflow-y:auto;"></div>
+                </div>
               </div>
             </div>
 
@@ -1508,16 +1520,97 @@
   <script type="module" src="./js/main.js"></script>
   <script>
     (function() {
-      const reviewInput = document.getElementById('reviewInput');
-      const saveReviewBtn = document.getElementById('saveReviewBtn');
+      const reviewInput    = document.getElementById('reviewInput');
+      const saveReviewBtn  = document.getElementById('saveReviewBtn');
+      const historyBtn     = document.getElementById('reviewHistoryBtn');
+      const historyPanel   = document.getElementById('reviewHistoryPanel');
+      const historyList    = document.getElementById('reviewHistoryList');
+      const dateLabel      = document.getElementById('reviewDateLabel');
+      const prevBtn        = document.getElementById('reviewPrevBtn');
+      const nextBtn        = document.getElementById('reviewNextBtn');
+
       const today = new Date().toISOString().slice(0, 10);
-      const key = 'review_' + today;
-      reviewInput.value = localStorage.getItem(key) || '';
+      let currentDate = today;
+
+      function allReviewDates() {
+        return Object.keys(localStorage)
+          .filter(k => k.startsWith('review_'))
+          .map(k => k.slice(7))
+          .sort((a, b) => b.localeCompare(a));
+      }
+
+      function loadDate(date) {
+        currentDate = date;
+        const isToday = date === today;
+        dateLabel.textContent = isToday ? '今天 · ' + date : date;
+        reviewInput.value = localStorage.getItem('review_' + date) || '';
+        reviewInput.readOnly = false;
+        saveReviewBtn.style.display = '';
+        // update arrow states
+        const dates = allReviewDates();
+        const idx = dates.indexOf(date);
+        prevBtn.style.opacity = (idx === -1 || idx === dates.length - 1) ? '0.3' : '1';
+        nextBtn.style.opacity = (date >= today) ? '0.3' : '1';
+      }
+
+      function renderHistory() {
+        const dates = allReviewDates();
+        if (dates.length === 0) {
+          historyList.innerHTML = '<p style="padding:16px;color:var(--text-muted);font-size:13px;text-align:center;">暂无历史复盘</p>';
+          return;
+        }
+        historyList.innerHTML = dates.map(d => {
+          const text = localStorage.getItem('review_' + d) || '';
+          const preview = text.slice(0, 40) + (text.length > 40 ? '…' : '');
+          const isActive = d === currentDate ? 'background:var(--line);' : '';
+          return `<div data-date="${d}" style="padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--line);${isActive}">
+            <div style="font-size:13px;font-weight:600;">${d === today ? '今天 · ' + d : d}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${preview || '（空）'}</div>
+          </div>`;
+        }).join('');
+        historyList.querySelectorAll('[data-date]').forEach(el => {
+          el.addEventListener('click', () => {
+            loadDate(el.dataset.date);
+            historyPanel.style.display = 'none';
+            historyBtn.textContent = '历史';
+          });
+        });
+      }
+
+      // save
       saveReviewBtn.addEventListener('click', () => {
-        localStorage.setItem(key, reviewInput.value);
+        localStorage.setItem('review_' + currentDate, reviewInput.value);
         saveReviewBtn.textContent = '已保存';
         setTimeout(() => saveReviewBtn.textContent = '保存', 1500);
       });
+
+      // history toggle
+      historyBtn.addEventListener('click', () => {
+        const open = historyPanel.style.display !== 'none';
+        if (open) {
+          historyPanel.style.display = 'none';
+          historyBtn.textContent = '历史';
+        } else {
+          renderHistory();
+          historyPanel.style.display = '';
+          historyBtn.textContent = '收起';
+        }
+      });
+
+      // prev/next
+      prevBtn.addEventListener('click', () => {
+        const dates = allReviewDates();
+        const idx = dates.indexOf(currentDate);
+        if (idx < dates.length - 1) loadDate(dates[idx + 1]);
+      });
+      nextBtn.addEventListener('click', () => {
+        const dates = allReviewDates();
+        const idx = dates.indexOf(currentDate);
+        if (idx > 0) loadDate(dates[idx - 1]);
+        else if (currentDate < today) loadDate(today);
+      });
+
+      loadDate(today);
     })();
   </script>
 
