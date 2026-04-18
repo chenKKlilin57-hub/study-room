@@ -425,6 +425,7 @@ async function saveStudySession(minutes) {
     await loadMyStats();
     await loadHistory();
     await loadLeaderboard();
+    await loadWeeklyChart();
     
     if (!el.heatmapPage.classList.contains("hidden-page")) {
       await renderHeatmap();
@@ -479,6 +480,88 @@ function renderSubjectStats(subjects) {
       bar.style.width = subject.percent + '%';
     }, 50);
   });
+}
+
+// 本周条形图
+async function loadWeeklyChart() {
+  const barChart = document.getElementById("weeklyBarChart");
+  const dayLabels = document.getElementById("weeklyDayLabels");
+  const summary = document.getElementById("weeklySummary");
+  if (!barChart) return;
+
+  const user = auth.getCurrentUser();
+  if (!user) {
+    barChart.innerHTML = '<div class="muted" style="font-size:12px;">登录后查看本周数据</div>';
+    dayLabels.innerHTML = "";
+    if (summary) summary.textContent = "";
+    return;
+  }
+
+  // Build last 7 days date range (Mon–Sun of current week)
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d.toISOString().split("T")[0]);
+  }
+
+  const startDate = days[0];
+  const endDate = days[6];
+
+  try {
+    const { data, error } = await supabase
+      .from("study_sessions")
+      .select("date, duration_minutes")
+      .eq("user_id", user.id)
+      .gte("date", startDate)
+      .lte("date", endDate);
+
+    if (error) throw error;
+
+    const minutesByDay = {};
+    days.forEach(d => { minutesByDay[d] = 0; });
+    (data || []).forEach(row => {
+      if (minutesByDay[row.date] !== undefined) {
+        minutesByDay[row.date] += row.duration_minutes || 0;
+      }
+    });
+
+    const values = days.map(d => minutesByDay[d]);
+    const maxVal = Math.max(...values, 1);
+    const totalThisWeek = values.reduce((a, b) => a + b, 0);
+    const DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
+    const todayStr = getLocalDateISO();
+
+    barChart.innerHTML = "";
+    dayLabels.innerHTML = "";
+
+    values.forEach((mins, i) => {
+      const heightPct = Math.max((mins / maxVal) * 100, mins > 0 ? 8 : 0);
+      const isToday = days[i] === todayStr;
+
+      const bar = document.createElement("div");
+      bar.style.cssText = `flex:1;border-radius:6px 6px 0 0;background:${isToday ? "var(--accent)" : "var(--line)"};height:${heightPct}%;min-height:${mins > 0 ? "6px" : "2px"};opacity:${isToday ? "1" : "0.7"};transition:height 0.5s ease;cursor:default;`;
+      bar.title = `${DAY_LABELS[i]}：${formatMinutes(mins)}`;
+      barChart.appendChild(bar);
+
+      const label = document.createElement("div");
+      label.style.cssText = `flex:1;text-align:center;font-size:11px;color:${isToday ? "var(--accent)" : "var(--text-muted)"};font-weight:${isToday ? "700" : "400"};`;
+      label.textContent = DAY_LABELS[i];
+      dayLabels.appendChild(label);
+    });
+
+    if (summary) {
+      const hours = (totalThisWeek / 60).toFixed(1);
+      summary.textContent = `本周已专注 ${hours} 小时`;
+    }
+  } catch (err) {
+    console.error("loadWeeklyChart error:", err);
+  }
 }
 
 // 排行榜
@@ -1519,7 +1602,8 @@ async function refreshSession() {
         loadCheckinInfo(),
         loadLeaderboard(),
         loadTasksByDate(selectedTaskDate),
-        loadReview(selectedTaskDate)
+        loadReview(selectedTaskDate),
+        loadWeeklyChart()
       ]);
 
       // 恢复计时状态
