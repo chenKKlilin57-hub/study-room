@@ -956,6 +956,11 @@
       .right {
         border-left:none;
         border-top:1px solid var(--line);
+        order: -1;
+      }
+
+      .left {
+        order: 1;
       }
 
       .stats {
@@ -1400,6 +1405,14 @@
               </div>
 
               <div class="list" id="taskList"></div>
+
+              <div id="reviewArea" style="margin-top:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <span style="font-size:14px;font-weight:600;">今日复盘</span>
+                  <button class="btn ghost" id="saveReviewBtn" style="padding:6px 12px;font-size:13px;">保存</button>
+                </div>
+                <textarea id="reviewInput" placeholder="今天学了什么？有什么收获或问题？" style="width:100%;min-height:90px;padding:12px;font-size:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);resize:vertical;font-family:inherit;line-height:1.6;outline:none;"></textarea>
+              </div>
             </div>
 
             <div id="leaderboardPane" class="hidden">
@@ -1493,6 +1506,20 @@
   </div>
 
   <script type="module" src="./js/main.js"></script>
+  <script>
+    (function() {
+      const reviewInput = document.getElementById('reviewInput');
+      const saveReviewBtn = document.getElementById('saveReviewBtn');
+      const today = new Date().toISOString().slice(0, 10);
+      const key = 'review_' + today;
+      reviewInput.value = localStorage.getItem(key) || '';
+      saveReviewBtn.addEventListener('click', () => {
+        localStorage.setItem(key, reviewInput.value);
+        saveReviewBtn.textContent = '已保存';
+        setTimeout(() => saveReviewBtn.textContent = '保存', 1500);
+      });
+    })();
+  </script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>
