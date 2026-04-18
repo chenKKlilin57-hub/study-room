@@ -798,7 +798,7 @@ function renderTaskItem(task, level = 0) {
       </div>
       ${hasSubtasks ? `<div class="task-progress-bar"><div class="task-progress-fill" style="width: ${progressPercent}%"></div></div>` : ''}
     </div>
-    <button class="btn ghost btn-add-subtask" data-task-id="${task.id}" title="添加子任务">+子</button>
+    <button class="btn ghost btn-add-subtask" data-task-id="${task.id}" title="添加子任务">+</button>
     <button class="btn ghost btn-edit-task" title="编辑">✎</button>
     <button class="btn ghost btn-del-task" title="删除">✕</button>
   `;
