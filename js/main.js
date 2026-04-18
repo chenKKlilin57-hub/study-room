@@ -510,24 +510,27 @@ async function loadWeeklyChart() {
     days.push(d.toISOString().split("T")[0]);
   }
 
-  const startDate = days[0];
-  const endDate = days[6];
+  const startISO = new Date(days[0] + "T00:00:00").toISOString();
+  const endISO   = new Date(days[6] + "T23:59:59").toISOString();
 
   try {
     const { data, error } = await supabase
       .from("study_sessions")
-      .select("date, duration_minutes")
+      .select("ended_at, duration_minutes")
       .eq("user_id", user.id)
-      .gte("date", startDate)
-      .lte("date", endDate);
+      .gte("ended_at", startISO)
+      .lte("ended_at", endISO);
 
     if (error) throw error;
 
     const minutesByDay = {};
     days.forEach(d => { minutesByDay[d] = 0; });
     (data || []).forEach(row => {
-      if (minutesByDay[row.date] !== undefined) {
-        minutesByDay[row.date] += row.duration_minutes || 0;
+      if (!row.ended_at) return;
+      const local = new Date(row.ended_at);
+      const dayKey = `${local.getFullYear()}-${String(local.getMonth()+1).padStart(2,"0")}-${String(local.getDate()).padStart(2,"0")}`;
+      if (minutesByDay[dayKey] !== undefined) {
+        minutesByDay[dayKey] += row.duration_minutes || 0;
       }
     });
 
