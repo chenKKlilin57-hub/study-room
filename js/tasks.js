@@ -81,29 +81,6 @@ export class TaskManager {
     }
   }
 
-  // 切换任务完成状态
-  async toggleTaskDone(taskId, done) {
-    const currentUser = this.auth.getCurrentUser();
-    if (!currentUser) {
-      return { success: false, message: "请先登录。" };
-    }
-
-    try {
-      const { error } = await this.supabase
-        .from("tasks")
-        .update({ done })
-        .eq("id", taskId)
-        .eq("user_id", currentUser.id);
-
-      if (error) throw error;
-      await this.loadTasksByDate(this.selectedTaskDate);
-      return { success: true };
-    } catch (err) {
-      console.error("toggleTaskDone error:", err);
-      return { success: false, message: "更新任务失败，请稍后重试。" };
-    }
-  }
-
   // 删除任务
   async deleteTask(taskId) {
     const currentUser = this.auth.getCurrentUser();
