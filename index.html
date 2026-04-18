@@ -545,9 +545,19 @@
       transition: width 0.3s ease;
     }
 
-    .btn-add-subtask {
-      font-size: 12px;
-      padding: 4px 8px;
+    .btn-add-subtask, .btn-edit-task, .btn-del-task {
+      width: 30px;
+      height: 30px;
+      padding: 0 !important;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .btn-del-task {
+      color: var(--danger);
     }
 
     .task-done {

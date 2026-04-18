@@ -605,7 +605,6 @@ async function toggleSubtasks(taskId, toggleBtn) {
 function renderSubtaskItem(subtask, container) {
   const item = document.createElement("div");
   item.className = "item subtask-item" + (subtask.done ? " task-done" : "");
-  item.style.paddingLeft = "52px";
 
   const durationText = subtask.duration_minutes ? `${subtask.duration_minutes}分钟` : "";
 
@@ -617,13 +616,13 @@ function renderSubtaskItem(subtask, container) {
         <span class="task-time">${durationText}</span>
       </div>
     </div>
-    <button class="btn ghost btn-edit-task">编辑</button>
-    <button class="btn ghost">删除</button>
+    <button class="btn ghost btn-edit-task" title="编辑">✎</button>
+    <button class="btn ghost btn-del-task" title="删除">✕</button>
   `;
 
   const checkbox = item.querySelector("input");
   const editBtn = item.querySelector(".btn-edit-task");
-  const delBtn = item.querySelectorAll("button")[1];
+  const delBtn = item.querySelector(".btn-del-task");
 
   checkbox.addEventListener("change", () => {
     toggleTaskDone(subtask.id, checkbox.checked);
@@ -787,15 +786,15 @@ function renderTaskItem(task, level = 0) {
       </div>
       ${hasSubtasks ? `<div class="task-progress-bar"><div class="task-progress-fill" style="width: ${progressPercent}%"></div></div>` : ''}
     </div>
-    <button class="btn ghost btn-add-subtask" data-task-id="${task.id}">+子</button>
-    <button class="btn ghost btn-edit-task">编辑</button>
-    <button class="btn ghost">删除</button>
+    <button class="btn ghost btn-add-subtask" data-task-id="${task.id}" title="添加子任务">+子</button>
+    <button class="btn ghost btn-edit-task" title="编辑">✎</button>
+    <button class="btn ghost btn-del-task" title="删除">✕</button>
   `;
 
   const checkbox = item.querySelector("input");
   const addSubtaskBtn = item.querySelector(".btn-add-subtask");
   const editBtn = item.querySelector(".btn-edit-task");
-  const delBtn = item.querySelectorAll("button")[2];
+  const delBtn = item.querySelector(".btn-del-task");
   const toggleBtn = item.querySelector(".task-toggle");
 
   checkbox.addEventListener("change", () => {
