@@ -267,24 +267,32 @@ export class Timer {
     }
 
     try {
-      const { data, error } = await this.supabase
-        .from("study_sessions")
-        .select("duration_minutes, created_at")
-        .eq("user_id", currentUser.id);
-
-      if (error) throw error;
-
-      const total = data.reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
       const todayISO = getLocalDateISO();
-      const today = data
-        .filter(x => x.created_at && getLocalDateISO(new Date(x.created_at)) === todayISO)
-        .reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const todayLocalStart = new Date(todayISO + "T00:00:00").toISOString();
+
+      const [todayRes, totalRes] = await Promise.all([
+        this.supabase
+          .from("study_sessions")
+          .select("duration_minutes")
+          .eq("user_id", currentUser.id)
+          .gte("created_at", todayLocalStart),
+        this.supabase
+          .from("study_sessions")
+          .select("duration_minutes, created_at", { count: "exact" })
+          .eq("user_id", currentUser.id)
+      ]);
+
+      if (todayRes.error) throw todayRes.error;
+      if (totalRes.error) throw totalRes.error;
+
+      const today = (todayRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const total = (totalRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
 
       return {
         success: true,
         today,
         total,
-        sessionCount: data.length
+        sessionCount: totalRes.count || 0
       };
     } catch (err) {
       console.error("loadStats error:", err);

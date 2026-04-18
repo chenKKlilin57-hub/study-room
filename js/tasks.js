@@ -129,7 +129,7 @@ export class TaskManager {
 
   // 计算任务统计
   getTaskStats() {
-    const tasks = this.currentTasks || [];
+    const tasks = (this.currentTasks || []).filter(t => !t.parent_id);
     const total = tasks.length;
     const done = tasks.filter(t => t.done).length;
     const totalMinutes = tasks.reduce((sum, t) => sum + (t.duration_minutes || 0), 0);
