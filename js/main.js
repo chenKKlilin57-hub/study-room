@@ -41,6 +41,7 @@ const loadJSON = (k, f) => {
 const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 let msgToastTimer = null;
 const showMessage = (m, type = "") => {
+  if (!m) { console.warn("[showMessage] 空消息被拦截", new Error().stack); return; }
   const el = document.getElementById("msgToast");
   if (!el) return;
   if (msgToastTimer) clearTimeout(msgToastTimer);
