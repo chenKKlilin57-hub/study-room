@@ -20,6 +20,7 @@ let appReady = false;
 let selectedTaskDate = null;
 let currentRankType = "daily";
 let dailyGoal = 240;
+let reviewDirty = false;
 let currentTodayMinutes = 0;
 let undoTimer = null;
 let pendingTaskDelete = null; // { taskId }
@@ -424,20 +425,78 @@ async function logout() {
 async function saveStudySession(minutes) {
   const subjectInput = document.getElementById("customSubjectInput");
   const subject = subjectInput ? subjectInput.value.trim() || "未分类" : "未分类";
-  
+
   const result = await timer.saveSession(minutes, subject);
   showMessage(result.message, result.success ? "ok" : "error");
-  
+
   if (result.success) {
     await loadMyStats();
     await loadHistory();
     await loadLeaderboard();
     await loadWeeklyChart();
-    
+
     if (!el.heatmapPage.classList.contains("hidden-page")) {
       await renderHeatmap();
     }
+
+    // Feature 3: 自动签到（静默）
+    const checkinResult = await auth.checkin(currentTodayMinutes, getLocalDateISO);
+
+    // Feature 4: 关联任务完成提示
+    const taskLinkSelect = document.getElementById("taskLinkSelect");
+    if (taskLinkSelect && taskLinkSelect.value) {
+      const linkedTaskId = taskLinkSelect.value;
+      const linkedTaskText = taskLinkSelect.options[taskLinkSelect.selectedIndex]?.text || "该任务";
+      const checkinNote = checkinResult.success ? `已签到，连续 ${checkinResult.streak} 天 🔥` : "";
+      showTaskLinkPrompt(linkedTaskId, linkedTaskText, checkinNote);
+    } else if (checkinResult.success) {
+      showMessage(`连续专注 ${checkinResult.streak} 天 🔥`, "ok");
+    }
   }
+}
+
+function showTaskLinkPrompt(taskId, taskText, checkinNote = "") {
+  const existing = document.getElementById("taskLinkPrompt");
+  if (existing) existing.remove();
+
+  const isDark = document.body.classList.contains("dark");
+  const bgColor = isDark ? "#2a2a2a" : "#ffffff";
+  const textColor = isDark ? "#f4efe8" : "#2c2724";
+  const mutedColor = isDark ? "#a89f97" : "#7a726c";
+  const borderColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)";
+  const skipBg = isDark ? "#333" : "#f0ece8";
+
+  const overlay = document.createElement("div");
+  overlay.id = "taskLinkPrompt";
+  overlay.style.cssText = `position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-end;justify-content:center;`;
+
+  overlay.innerHTML = `
+    <div id="_tlpBackdrop" style="position:absolute;inset:0;background:rgba(0,0,0,0.35);"></div>
+    <div style="position:relative;width:100%;max-width:520px;background:${bgColor};border-radius:20px 20px 0 0;padding:20px 20px 32px;box-shadow:0 -4px 24px rgba(0,0,0,0.18);">
+      <div style="width:36px;height:4px;border-radius:2px;background:${borderColor};margin:0 auto 16px;"></div>
+      <div style="font-size:14px;font-weight:600;color:${textColor};margin-bottom:6px;">标记任务完成？</div>
+      <div style="font-size:13px;color:${mutedColor};margin-bottom:${checkinNote ? '6px' : '20px'};">「${esc(taskText)}」</div>
+      ${checkinNote ? `<div style="font-size:12px;color:${mutedColor};margin-bottom:16px;">✅ ${esc(checkinNote)}</div>` : ""}
+      <div style="display:flex;gap:10px;">
+        <button id="taskLinkSkip" style="flex:1;padding:11px;border-radius:12px;border:none;background:${skipBg};color:${mutedColor};font-size:14px;cursor:pointer;font-weight:500;">跳过</button>
+        <button id="taskLinkDone" style="flex:2;padding:11px;border-radius:12px;border:none;background:#b46b5d;color:#fff;font-size:14px;cursor:pointer;font-weight:600;">标记完成</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  document.getElementById("_tlpBackdrop").addEventListener("click", close);
+  document.getElementById("taskLinkSkip").addEventListener("click", close);
+  document.getElementById("taskLinkDone").addEventListener("click", async () => {
+    close();
+    const res = await taskManager.toggleTaskDone(taskId, true);
+    if (res.success) {
+      renderTasks();
+      showMessage("任务已标记完成", "ok");
+    }
+  });
+  setTimeout(close, 15000);
 }
 
 async function loadMyStats() {
@@ -781,6 +840,7 @@ async function addSubtask(text, dateStr, durationMinutes, priority, parentId) {
 }
 
 async function changeTaskDate(days) {
+  await autoSaveReview();
   const d = new Date(selectedTaskDate + "T00:00:00");
   d.setDate(d.getDate() + days);
   selectedTaskDate = getLocalDateISO(d);
@@ -790,6 +850,12 @@ async function changeTaskDate(days) {
 }
 
 // 复盘
+async function autoSaveReview() {
+  if (!reviewDirty) return;
+  await saveReview(selectedTaskDate);
+  reviewDirty = false;
+}
+
 async function loadReview(date) {
   const reviewInput  = document.getElementById("reviewInput");
   const dateLabel    = document.getElementById("reviewDateLabel");
@@ -810,6 +876,7 @@ async function loadReview(date) {
   } else {
     reviewInput.value = localStorage.getItem("review_" + date) || "";
   }
+  reviewDirty = false;
 }
 
 async function saveReview(date) {
@@ -1466,12 +1533,14 @@ function bindCommon() {
   // 任务日期
   el.taskDatePicker.addEventListener("change", async (e) => {
     if (e.target.value) {
+      await autoSaveReview();
       selectedTaskDate = e.target.value;
       await loadTasksByDate(selectedTaskDate);
       await loadReview(selectedTaskDate);
     }
   });
   el.goTodayBtn.addEventListener("click", async () => {
+    await autoSaveReview();
     selectedTaskDate = getLocalDateISO();
     el.taskDatePicker.value = selectedTaskDate;
     await loadTasksByDate(selectedTaskDate);
@@ -1483,6 +1552,10 @@ function bindCommon() {
   const saveReviewBtn = document.getElementById("saveReviewBtn");
   if (saveReviewBtn) {
     saveReviewBtn.addEventListener("click", () => saveReview(selectedTaskDate));
+  }
+  const reviewInput = document.getElementById("reviewInput");
+  if (reviewInput) {
+    reviewInput.addEventListener("input", () => { reviewDirty = true; });
   }
 
   // 排行榜切换
