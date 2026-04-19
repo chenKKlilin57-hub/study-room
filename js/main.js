@@ -444,6 +444,7 @@ async function saveStudySession(minutes) {
     await loadHistory();
     await loadLeaderboard();
     await loadWeeklyChart();
+    await loadSubjectStats();
 
     if (!el.heatmapPage.classList.contains("hidden-page")) {
       await renderHeatmap();
