@@ -1,10 +1,10 @@
 // 主应用入口文件
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SUPABASE_CONFIG, APP_CONFIG } from './config.js';
-import { Auth } from './auth.js';
-import { Timer } from './timer.js';
-import { TaskManager } from './tasks.js';
-import { Heatmap } from './heatmap.js';
+import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
+import { Auth } from './auth.js?v=2';
+import { Timer } from './timer.js?v=2';
+import { TaskManager } from './tasks.js?v=2';
+import { Heatmap } from './heatmap.js?v=2';
 
 // 初始化 Supabase
 const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
