@@ -1271,7 +1271,9 @@ function bindCommon() {
   el.pauseBtn.addEventListener("click", pauseTimer);
   el.resetBtn.addEventListener("click", resetTimer);
   el.saveManualBtn.addEventListener("click", () => {
-    const minutes = Math.floor(timer.getSelectedDuration() / 60);
+    const elapsed = timer.getElapsedSeconds();
+    const seconds = elapsed > 0 ? elapsed : timer.getSelectedDuration();
+    const minutes = Math.max(1, Math.floor(seconds / 60));
     showUndoToast(minutes);
   });
 
