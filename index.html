@@ -4,6 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>稀奇小杰泥自习室</title>
+  <link rel="manifest" href="/study-room/manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="自习室" />
+  <meta name="theme-color" content="#b46b5d" />
+  <link rel="apple-touch-icon" href="/study-room/icons/icon-192.png" />
   <style>
     :root {
       --bg:#f6f3ee;
@@ -1604,5 +1610,12 @@
     <button class="btn primary" id="addSubtaskDrawerBtn" style="width:100%; padding:14px; margin-top:8px;">添加子任务</button>
   </div>
 
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>

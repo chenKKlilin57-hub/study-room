@@ -1,0 +1,25 @@
+{
+  "name": "稀奇小杰泥自习室",
+  "short_name": "自习室",
+  "description": "专注学习，记录成长。",
+  "start_url": "/study-room/",
+  "scope": "/study-room/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f3ee",
+  "theme_color": "#b46b5d",
+  "icons": [
+    {
+      "src": "/study-room/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/study-room/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
