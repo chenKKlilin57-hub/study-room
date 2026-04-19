@@ -427,7 +427,7 @@ async function saveStudySession(minutes) {
   const subject = subjectInput ? subjectInput.value.trim() || "未分类" : "未分类";
 
   const result = await timer.saveSession(minutes, subject);
-  showMessage(result.message, result.success ? "ok" : "error");
+  showMessage(result.message || (result.success ? `已记录 ${minutes} 分钟` : "记录失败"), result.success ? "ok" : "error");
 
   if (result.success) {
     await loadMyStats();
