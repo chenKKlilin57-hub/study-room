@@ -425,7 +425,16 @@ async function logout() {
 // 学习记录
 async function saveStudySession(minutes) {
   const subjectInput = document.getElementById("customSubjectInput");
-  const subject = subjectInput ? subjectInput.value.trim() || "未分类" : "未分类";
+  const taskLinkSelect = document.getElementById("taskLinkSelect");
+  let subject = subjectInput ? subjectInput.value.trim() : "";
+
+  // If no manual subject, fall back to the linked task's name
+  if (!subject && taskLinkSelect && taskLinkSelect.value) {
+    const linkedTask = taskManager.getCurrentTasks().find(t => t.id === taskLinkSelect.value);
+    if (linkedTask) subject = linkedTask.text.slice(0, 20);
+  }
+
+  if (!subject) subject = "未分类";
 
   const result = await timer.saveSession(minutes, subject);
   showMessage(result.message || (result.success ? `已记录 ${minutes} 分钟` : "记录失败"), result.success ? "ok" : "error");
@@ -617,10 +626,21 @@ async function loadWeeklyChart() {
       const heightPct = Math.max((mins / maxVal) * 100, mins > 0 ? 8 : 0);
       const isToday = days[i] === todayStr;
 
+      // Wrapper column: value label on top, bar below
+      const col = document.createElement("div");
+      col.style.cssText = `flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;`;
+
+      const valLabel = document.createElement("div");
+      valLabel.style.cssText = `font-size:10px;color:${isToday ? "var(--accent)" : "var(--muted)"};font-weight:${isToday ? "700" : "400"};margin-bottom:2px;white-space:nowrap;`;
+      valLabel.textContent = mins > 0 ? formatMinutes(mins) : "";
+
       const bar = document.createElement("div");
-      bar.style.cssText = `flex:1;border-radius:6px 6px 0 0;background:${isToday ? "var(--accent)" : "rgba(180,107,93,0.22)"};height:${heightPct}%;min-height:${mins > 0 ? "6px" : "2px"};transition:height 0.5s ease;cursor:default;`;
+      bar.style.cssText = `width:100%;border-radius:6px 6px 0 0;background:${isToday ? "var(--accent)" : "rgba(180,107,93,0.22)"};height:${heightPct}%;min-height:${mins > 0 ? "6px" : "2px"};transition:height 0.5s ease;cursor:default;`;
       bar.title = `${DAY_LABELS[i]}：${formatMinutes(mins)}`;
-      barChart.appendChild(bar);
+
+      col.appendChild(valLabel);
+      col.appendChild(bar);
+      barChart.appendChild(col);
 
       const label = document.createElement("div");
       label.style.cssText = `flex:1;text-align:center;font-size:11px;color:${isToday ? "var(--accent)" : "var(--text-muted)"};font-weight:${isToday ? "700" : "400"};`;
@@ -873,9 +893,9 @@ async function loadReview(date) {
       .eq("user_id", user.id)
       .eq("review_date", date)
       .maybeSingle();
-    reviewInput.value = data?.content ?? "";
+    reviewInput.innerHTML = data?.content ?? "";
   } else {
-    reviewInput.value = localStorage.getItem("review_" + date) || "";
+    reviewInput.innerHTML = localStorage.getItem("review_" + date) || "";
   }
   reviewDirty = false;
 }
@@ -885,7 +905,7 @@ async function saveReview(date) {
   const saveBtn     = document.getElementById("saveReviewBtn");
   if (!reviewInput) return;
 
-  const content = reviewInput.value;
+  const content = reviewInput.innerHTML;
   const user    = auth.getCurrentUser();
 
   if (user) {
