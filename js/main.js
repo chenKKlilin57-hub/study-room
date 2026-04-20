@@ -24,6 +24,7 @@ let reviewDirty = false;
 let currentTodayMinutes = 0;
 let undoTimer = null;
 let pendingTaskDelete = null; // { taskId }
+let lastLinkedTaskId = null;
 
 // DOM 元素选择器
 const $ = (id) => document.getElementById(id);
@@ -429,8 +430,9 @@ async function saveStudySession(minutes) {
   let subject = subjectInput ? subjectInput.value.trim() : "";
 
   // If no manual subject, fall back to the linked task's name
-  if (!subject && taskLinkSelect && taskLinkSelect.value) {
-    const linkedTask = taskManager.getCurrentTasks().find(t => t.id === taskLinkSelect.value);
+  const linkedId = (taskLinkSelect && taskLinkSelect.value) || lastLinkedTaskId;
+  if (!subject && linkedId) {
+    const linkedTask = taskManager.getCurrentTasks().find(t => t.id === linkedId);
     if (linkedTask) subject = linkedTask.text.slice(0, 20);
   }
 
@@ -1545,7 +1547,8 @@ function bindCommon() {
   if (taskLinkSelect) {
     taskLinkSelect.addEventListener("change", () => {
       const taskId = taskLinkSelect.value;
-      if (!taskId) return;
+      if (taskId) lastLinkedTaskId = taskId;
+      else lastLinkedTaskId = null;
       const task = taskManager.getCurrentTasks().find(t => t.id === taskId);
       if (task) {
         const subjectInput = document.getElementById("customSubjectInput");
