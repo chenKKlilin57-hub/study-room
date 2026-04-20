@@ -432,7 +432,7 @@ async function saveStudySession(minutes) {
   // If no manual subject, fall back to the linked task's name
   const linkedId = (taskLinkSelect && taskLinkSelect.value) || lastLinkedTaskId;
   if (!subject && linkedId) {
-    const linkedTask = taskManager.getCurrentTasks().find(t => t.id === linkedId);
+    const linkedTask = taskManager.getCurrentTasks().find(t => String(t.id) === String(linkedId));
     if (linkedTask) subject = linkedTask.text.slice(0, 20);
   }
 
@@ -1549,7 +1549,7 @@ function bindCommon() {
       const taskId = taskLinkSelect.value;
       if (taskId) lastLinkedTaskId = taskId;
       else lastLinkedTaskId = null;
-      const task = taskManager.getCurrentTasks().find(t => t.id === taskId);
+      const task = taskManager.getCurrentTasks().find(t => String(t.id) === String(taskId));
       if (task) {
         const subjectInput = document.getElementById("customSubjectInput");
         if (subjectInput) subjectInput.value = task.text.slice(0, 20);
