@@ -245,7 +245,9 @@ export class Timer {
         ended_at: new Date().toISOString()
       };
 
-      const { error } = await this.supabase.from("study_sessions").insert(payload);
+      console.log("[saveSession] payload:", JSON.stringify(payload));
+      const { data: insertData, error } = await this.supabase.from("study_sessions").insert(payload).select();
+      console.log("[saveSession] result:", JSON.stringify(insertData), error ? "ERROR:" + error.message : "OK");
       if (error) throw error;
 
       const message = `已记录 ${validMinutes} 分钟学习时间${
