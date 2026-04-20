@@ -434,7 +434,8 @@ async function saveStudySession(minutes) {
   console.log("[debug] subjectInput:", subject, "| taskLinkSelect.value:", taskLinkSelect?.value, "| lastLinkedTaskId:", lastLinkedTaskId, "| linkedId:", linkedId);
   console.log("[debug] currentTasks:", taskManager.getCurrentTasks().map(t => ({id: t.id, type: typeof t.id, text: t.text})));
   if (!subject && linkedId) {
-    const linkedTask = taskManager.getCurrentTasks().find(t => String(t.id) === String(linkedId));
+    // 从数据库查找任务，避免 getCurrentTasks() 按日期过滤导致的任务丢失
+    const { data: linkedTask } = await supabase.from("tasks").select("text").eq("id", linkedId).single();
     console.log("[debug] linkedTask found:", linkedTask);
     if (linkedTask) subject = linkedTask.text.slice(0, 20);
   }
@@ -1549,14 +1550,17 @@ function bindCommon() {
   // 关联任务选择器
   const taskLinkSelect = document.getElementById("taskLinkSelect");
   if (taskLinkSelect) {
-    taskLinkSelect.addEventListener("change", () => {
+    taskLinkSelect.addEventListener("change", async () => {
       const taskId = taskLinkSelect.value;
       if (taskId) lastLinkedTaskId = taskId;
       else lastLinkedTaskId = null;
-      const task = taskManager.getCurrentTasks().find(t => String(t.id) === String(taskId));
-      if (task) {
-        const subjectInput = document.getElementById("customSubjectInput");
-        if (subjectInput) subjectInput.value = task.text.slice(0, 20);
+      // 始终从数据库查找任务，避免 getCurrentTasks() 按日期过滤导致的任务丢失
+      const subjectInput = document.getElementById("customSubjectInput");
+      if (taskId && subjectInput) {
+        const { data: task } = await supabase.from("tasks").select("text").eq("id", taskId).single();
+        if (task) subjectInput.value = task.text.slice(0, 20);
+      } else if (subjectInput) {
+        subjectInput.value = "";
       }
     });
   }
