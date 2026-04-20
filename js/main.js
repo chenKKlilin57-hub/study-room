@@ -431,11 +431,15 @@ async function saveStudySession(minutes) {
 
   // If no manual subject, fall back to the linked task's name
   const linkedId = (taskLinkSelect && taskLinkSelect.value) || lastLinkedTaskId;
+  console.log("[debug] subjectInput:", subject, "| taskLinkSelect.value:", taskLinkSelect?.value, "| lastLinkedTaskId:", lastLinkedTaskId, "| linkedId:", linkedId);
+  console.log("[debug] currentTasks:", taskManager.getCurrentTasks().map(t => ({id: t.id, type: typeof t.id, text: t.text})));
   if (!subject && linkedId) {
     const linkedTask = taskManager.getCurrentTasks().find(t => String(t.id) === String(linkedId));
+    console.log("[debug] linkedTask found:", linkedTask);
     if (linkedTask) subject = linkedTask.text.slice(0, 20);
   }
 
+  console.log("[debug] final subject:", subject);
   if (!subject) subject = "未分类";
 
   const result = await timer.saveSession(minutes, subject);
