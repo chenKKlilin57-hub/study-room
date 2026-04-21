@@ -63,6 +63,18 @@ const formatMinutes = (min) => {
   return m ? `${h}h ${m}m` : `${h}h`;
 };
 
+const getDisplayName = () => {
+  const profileName = auth.getProfile()?.username?.trim();
+  if (profileName) return profileName;
+
+  const currentUser = auth.getCurrentUser();
+  const metadataName = currentUser?.user_metadata?.username?.trim();
+  if (metadataName) return metadataName;
+
+  const emailName = currentUser?.email?.split("@")[0]?.trim();
+  return emailName || "已登录";
+};
+
 const getBeijingDate = (utcDate = new Date()) => {
   // UTC+8，无论用户设备时区
   const offset = 8 * 60 * 60 * 1000;
@@ -130,6 +142,12 @@ const el = {
   historyList: $("historyList"),
   refreshHistoryBtn: $("refreshHistoryBtn"),
   checkinArea: $("checkinArea"),
+  editUsernameBtn: $("editUsernameBtn"),
+  usernameDrawer: $("usernameDrawer"),
+  usernameDrawerOverlay: $("usernameDrawerOverlay"),
+  closeUsernameDrawerBtn: $("closeUsernameDrawerBtn"),
+  usernameInput: $("usernameInput"),
+  saveUsernameBtn: $("saveUsernameBtn"),
   displayDate: $("displayDate"),
   checkinStatus: $("checkinStatus"),
   streakDays: $("streakDays"),
@@ -170,11 +188,13 @@ function updateTimer() {
 function updateAuthUI() {
   const currentUser = auth.getCurrentUser();
   if (currentUser) {
-    el.userChip.textContent = currentUser.email || "已登录";
-    if (el.heatmapUserChip) el.heatmapUserChip.textContent = currentUser.email || "已登录";
+    const displayName = getDisplayName();
+    el.userChip.textContent = displayName;
+    if (el.heatmapUserChip) el.heatmapUserChip.textContent = displayName;
     el.authView.classList.add("hidden");
     el.studyView.classList.remove("hidden");
     el.logoutBtn.classList.remove("hidden");
+    el.editUsernameBtn?.classList.remove("hidden");
     el.checkinArea.classList.remove("hidden");
     loadSubjectStats("today");
   } else {
@@ -183,6 +203,7 @@ function updateAuthUI() {
     el.authView.classList.remove("hidden");
     el.studyView.classList.add("hidden");
     el.logoutBtn.classList.add("hidden");
+    el.editUsernameBtn?.classList.add("hidden");
     el.checkinArea.classList.add("hidden");
     renderTasks();
     heatmap.clear();
@@ -421,6 +442,40 @@ async function login() {
 async function logout() {
   await auth.logout();
   updateAuthUI();
+}
+
+function openUsernameDrawer() {
+  const currentUser = auth.getCurrentUser();
+  if (!currentUser) return;
+
+  if (el.usernameInput) {
+    el.usernameInput.value = getDisplayName();
+  }
+  el.usernameDrawer?.classList.add("show");
+  el.usernameDrawerOverlay?.classList.add("show");
+  setTimeout(() => el.usernameInput?.focus(), 50);
+}
+
+function closeUsernameDrawer() {
+  el.usernameDrawer?.classList.remove("show");
+  el.usernameDrawerOverlay?.classList.remove("show");
+}
+
+async function saveUsername() {
+  const currentUser = auth.getCurrentUser();
+  if (!currentUser || auth.isLoading()) return;
+
+  const nextName = el.usernameInput?.value?.trim() || "";
+  setButtonLoading(el.saveUsernameBtn, "保存中...", true);
+  const result = await auth.updateUsername(nextName);
+  setButtonLoading(el.saveUsernameBtn, "", false);
+  showMessage(result.message, result.success ? "ok" : "error");
+
+  if (!result.success) return;
+
+  closeUsernameDrawer();
+  updateAuthUI();
+  await loadLeaderboard();
 }
 
 // 学习记录
@@ -679,7 +734,7 @@ async function loadLeaderboard() {
   }
   
   const currentUser = auth.getCurrentUser();
-  const currentUsername = currentUser?.user_metadata?.username || currentUser?.email?.split("@")[0] || "";
+  const currentUsername = getDisplayName();
   
   result.data.forEach((row, idx) => {
     const mins = Number(row.total_minutes || 0);
@@ -1292,8 +1347,16 @@ function bindCommon() {
 
   // 认证按钮
   el.logoutBtn.addEventListener("click", logout);
+  el.editUsernameBtn?.addEventListener("click", openUsernameDrawer);
   el.loginBtn.addEventListener("click", login);
   el.signupBtn.addEventListener("click", signup);
+
+  el.closeUsernameDrawerBtn?.addEventListener("click", closeUsernameDrawer);
+  el.usernameDrawerOverlay?.addEventListener("click", closeUsernameDrawer);
+  el.saveUsernameBtn?.addEventListener("click", saveUsername);
+  el.usernameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveUsername();
+  });
 
   // 计时器按钮
   el.startBtn.addEventListener("click", startTimer);
@@ -1717,6 +1780,7 @@ async function refreshSession() {
 
     if (result.success && result.user) {
       await auth.ensureProfile();
+      updateAuthUI();
       await Promise.all([
         loadMyStats(),
         loadHistory(),
@@ -1796,4 +1860,3 @@ async function main() {
 
 // 启动应用
 main();
-

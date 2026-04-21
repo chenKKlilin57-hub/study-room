@@ -3,6 +3,7 @@ export class Auth {
   constructor(supabase) {
     this.supabase = supabase;
     this.currentUser = null;
+    this.profile = null;
     this.authLoading = false;
   }
 
@@ -12,6 +13,10 @@ export class Auth {
 
   setCurrentUser(user) {
     this.currentUser = user;
+  }
+
+  getProfile() {
+    return this.profile;
   }
 
   isLoading() {
@@ -80,6 +85,29 @@ export class Auth {
   async logout() {
     await this.supabase.auth.signOut();
     this.currentUser = null;
+    this.profile = null;
+  }
+
+  async loadProfile() {
+    if (!this.currentUser) {
+      this.profile = null;
+      return null;
+    }
+
+    try {
+      const { data, error } = await this.supabase
+        .from("profiles")
+        .select("id, username")
+        .eq("id", this.currentUser.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      this.profile = data || null;
+      return this.profile;
+    } catch (err) {
+      console.error("loadProfile error:", err);
+      return null;
+    }
   }
 
   // 确保用户资料存在
@@ -99,18 +127,63 @@ export class Auth {
         .maybeSingle();
 
       if (!data) {
-        await this.supabase.from("profiles").upsert({
+        this.profile = {
           id: this.currentUser.id,
           username: fallbackUsername
-        });
+        };
+        await this.supabase.from("profiles").upsert(this.profile);
       } else if (!data.username) {
-        await this.supabase.from("profiles").upsert({
+        this.profile = {
           id: this.currentUser.id,
           username: fallbackUsername
-        });
+        };
+        await this.supabase.from("profiles").upsert(this.profile);
+      } else {
+        this.profile = data;
       }
     } catch (err) {
       console.error("ensureProfile error:", err);
+    }
+  }
+
+  async updateUsername(username) {
+    if (!this.currentUser || this.authLoading) {
+      return { success: false, message: "请先登录。" };
+    }
+
+    const trimmed = (username || "").trim();
+    if (!trimmed) {
+      return { success: false, message: "用户名不能为空。" };
+    }
+    if (trimmed.length > 30) {
+      return { success: false, message: "用户名最多 30 个字符。" };
+    }
+
+    this.authLoading = true;
+    try {
+      const profile = {
+        id: this.currentUser.id,
+        username: trimmed
+      };
+
+      const { error } = await this.supabase.from("profiles").upsert(profile);
+      if (error) throw error;
+
+      this.profile = profile;
+      this.currentUser = {
+        ...this.currentUser,
+        user_metadata: {
+          ...(this.currentUser.user_metadata || {}),
+          username: trimmed
+        }
+      };
+
+      return { success: true, message: "用户名已更新。", username: trimmed };
+    } catch (err) {
+      console.error("updateUsername error:", err);
+      return { success: false, message: "用户名更新失败，请稍后重试。" };
+    } finally {
+      this.authLoading = false;
     }
   }
 

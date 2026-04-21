@@ -1203,6 +1203,7 @@
 
           <div class="toolbar">
             <div class="chip" id="userChip">未登录</div>
+            <button class="btn ghost hidden" id="editUsernameBtn" style="padding:10px 12px;font-size:13px;">改用户名</button>
             <button class="icon-btn" id="themeBtn" title="切换深浅色">☾</button>
             <button class="icon-btn" id="fullBtn" title="全屏">⛶</button>
             <button class="btn ghost hidden" id="logoutBtn">退出登录</button>
@@ -1525,7 +1526,7 @@
     </div>
   </div>
 
-  <script type="module" src="./js/main.js?v=3"></script>
+  <script type="module" src="./js/main.js?v=4"></script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>
@@ -1581,6 +1582,20 @@
       </div>
     </div>
     <button class="btn primary" id="saveEditBtn" style="width:100%; padding:14px; margin-top:8px;">保存</button>
+  </div>
+
+  <div class="drawer-overlay" id="usernameDrawerOverlay"></div>
+  <div class="task-drawer" id="usernameDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">修改用户名</div>
+      <button class="drawer-close" id="closeUsernameDrawerBtn">×</button>
+    </div>
+    <div class="drawer-field">
+      <label class="drawer-label">当前显示名称</label>
+      <input class="drawer-input" id="usernameInput" type="text" maxlength="30" placeholder="输入新的用户名" />
+    </div>
+    <div class="auth-note" style="margin-bottom:16px;">用户名会显示在顶部和排行榜中，最多 30 个字符。</div>
+    <button class="btn primary" id="saveUsernameBtn" style="width:100%; padding:14px; margin-top:8px;">保存用户名</button>
   </div>
 
   <!-- 添加子任务抽屉 -->
