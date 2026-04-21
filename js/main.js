@@ -2,7 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
 import { Auth } from './auth.js?v=2';
-import { Timer } from './timer.js?v=2';
+import { Timer } from './timer.js?v=3';
 import { TaskManager } from './tasks.js?v=2';
 import { Heatmap } from './heatmap.js?v=2';
 
@@ -1257,13 +1257,16 @@ async function loadSubjectList() {
 
 
 // 计时器控制
-function startTimer() {
+async function startTimer() {
   const onTick = () => updateTimer();
   const onComplete = async (minutes) => {
     await saveStudySession(minutes);
   };
 
-  const started = timer.start(onTick, onComplete);
+  setButtonLoading(el.startBtn, "启动中...", true);
+  const started = await timer.start(onTick, onComplete);
+  setButtonLoading(el.startBtn, "", false);
+
   if (started) {
     el.statusText.textContent = "专注正在进行...";
 
@@ -1271,6 +1274,8 @@ function startTimer() {
     if (timer.isFreeMode) {
       el.finishFocusBtn.style.display = "";
     }
+  } else if (!timer.isRunning()) {
+    el.statusText.textContent = "启动失败，请稍后重试。";
   }
 }
 
@@ -1419,8 +1424,8 @@ function bindCommon() {
       showMessage("专注时间不足 1 分钟，将按 1 分钟记录");
     }
 
-    timer.pause();
-    timer.reset();
+    await timer.pause();
+    await timer.reset();
     updateTimer();
     el.finishFocusBtn.style.display = "none";
     el.statusText.textContent = "已完成专注";

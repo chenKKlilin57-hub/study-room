@@ -11,6 +11,8 @@ export class Timer {
     this.isFreeMode = false; // 专注计时模式（无限制）
     this.elapsedInFreeMode = 0; // 专注计时模式下的累计时间
     this.activeSessionId = null; // 当前活动的计时会话ID
+    this.starting = false;
+    this.startCancelled = false;
   }
 
   // 保存计时状态到数据库
@@ -92,7 +94,7 @@ export class Timer {
   }
 
   isRunning() {
-    return this.timer !== null;
+    return this.timer !== null || this.starting;
   }
 
   getRemaining() {
@@ -159,12 +161,27 @@ export class Timer {
   // 开始计时
   async start(onTick, onComplete) {
     const currentUser = this.auth.getCurrentUser();
-    if (!currentUser || this.timer) return false;
+    if (!currentUser || this.isRunning()) return false;
 
-    this.startedAt = Date.now();
+    this.starting = true;
+    this.startCancelled = false;
+    if (!this.startedAt) this.startedAt = Date.now();
 
-    // 保存计时状态到数据库
-    await this.saveTimerState();
+    try {
+      // 保存计时状态到数据库
+      await this.saveTimerState();
+    } catch (err) {
+      console.error("saveTimerState error:", err);
+      this.starting = false;
+      return false;
+    }
+
+    if (this.startCancelled) {
+      this.starting = false;
+      this.startCancelled = false;
+      await this.clearTimerState();
+      return false;
+    }
 
     this.timer = setInterval(async () => {
       if (this.isFreeMode) {
@@ -179,7 +196,7 @@ export class Timer {
           const minutes = Math.floor(this.selectedDuration / 60);
           if (onComplete) await onComplete(minutes);
           await this.clearTimerState();
-          this.reset(false);
+          await this.reset(false);
         }
       }
 
@@ -189,11 +206,19 @@ export class Timer {
       }
     }, 1000);
 
+    this.starting = false;
     return true;
   }
 
   // 暂停计时
   async pause() {
+    if (this.starting && !this.timer) {
+      this.startCancelled = true;
+      this.starting = false;
+      await this.clearTimerState();
+      return true;
+    }
+
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -206,6 +231,11 @@ export class Timer {
 
   // 停止计时
   stop() {
+    if (this.starting) {
+      this.startCancelled = true;
+      this.starting = false;
+    }
+
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
