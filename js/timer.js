@@ -276,7 +276,7 @@ export class Timer {
     this.remainingAtRunStart = this.selectedDuration;
     this.elapsedAtRunStart = 0;
     this.timerMode = "countdown";
-    this.isFreeMode = false;
+    this.isFreeMode = this.selectedDuration === 0;
     this.elapsedInFreeMode = 0;
     // 重置时清除数据库状态
     await this.clearTimerState();

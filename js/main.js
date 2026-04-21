@@ -2,7 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
 import { Auth } from './auth.js?v=2';
-import { Timer } from './timer.js?v=4';
+import { Timer } from './timer.js?v=5';
 import { TaskManager } from './tasks.js?v=2';
 import { Heatmap } from './heatmap.js?v=2';
 
@@ -751,7 +751,7 @@ async function loadLeaderboard() {
     const isMe = (row.user_id && currentUser && row.user_id === currentUser.id) || (row.username === currentUsername);
     const div = document.createElement("div");
     div.className = "item" + (isMe ? " me" : "");
-    div.innerHTML = `<div style="width:34px;text-align:center">${idx === 0 ? '👑' : idx + 1}</div><div class="main"><div>${esc(row.username || "学习者")}${isMe ? '<span style="font-size:12px;color:var(--accent);">（我）</span>' : ""}</div><div class="small muted">${currentRankType === "daily" ? "今日学习时长" : "总学习时长"}：${formatMinutes(mins)}</div></div><button class="btn ghost leaderboard-detail-btn" style="padding:6px 10px;font-size:12px;">组成</button>`;
+    div.innerHTML = `<div style="width:34px;text-align:center">${idx === 0 ? '👑' : idx + 1}</div><div class="main"><div>${esc(row.username || "学习者")}${isMe ? '<span style="font-size:12px;color:var(--accent);">（我）</span>' : ""}</div><div class="small muted">${currentRankType === "daily" ? "今日学习时长" : "总学习时长"}：${formatMinutes(mins)}</div></div><button class="btn ghost leaderboard-detail-btn" style="padding:6px 10px;font-size:14px;" title="查看用时组成">✦</button>`;
     div.querySelector(".leaderboard-detail-btn").addEventListener("click", () => {
       openBreakdownDrawer(row, mins);
     });
@@ -1102,7 +1102,7 @@ function insertReviewChecklist() {
   document.execCommand(
     "insertHTML",
     false,
-    '<div><label><input type="checkbox"> 待检查事项</label></div>'
+    '<div><input type="checkbox"></div>'
   );
   scheduleReviewAutoSave();
 }
@@ -1390,11 +1390,7 @@ async function startTimer() {
 
   if (started) {
     el.statusText.textContent = "专注正在进行...";
-
-    // 如果是专注计时模式，显示完成按钮
-    if (timer.isFreeMode) {
-      el.finishFocusBtn.style.display = "";
-    }
+    el.finishFocusBtn.style.display = "";
   } else if (!timer.isRunning()) {
     el.statusText.textContent = "启动失败，请稍后重试。";
   }
@@ -1404,16 +1400,16 @@ async function pauseTimer() {
   const paused = await timer.pause();
   if (paused) {
     el.statusText.textContent = "已暂停。";
-
-    // 如果是专注计时模式，暂停时保存记录
-    if (timer.isFreeMode && timer.elapsedInFreeMode > 0) {
-      const minutes = Math.max(1, Math.floor(timer.elapsedInFreeMode / 60)); // 至少 1 分钟
-      showUndoToast(minutes);
-    }
   }
 }
 
 async function resetTimer() {
+  const elapsed = timer.getElapsedSeconds();
+  if (elapsed > 0) {
+    const ok = confirm("重置不会保存当前专注时间，确定要重置吗？");
+    if (!ok) return;
+  }
+
   await timer.reset(true);
   updateTimer();
   el.statusText.textContent = "现在只做这一件事。";
@@ -1454,7 +1450,7 @@ function bindCommon() {
     document.getElementById("modeText").textContent = "当前专注：" + minutes + "分钟";
     el.saveManualBtn.textContent = "手动记 " + minutes + " 分钟";
     el.saveManualBtn.style.display = ""; // 恢复显示手动记录按钮
-    el.finishFocusBtn.style.display = "none"; // 隐藏完成专注按钮
+    el.finishFocusBtn.style.display = "none"; // 未开始前不显示记录按钮
   }));
 
   // 主题切换
@@ -1534,18 +1530,25 @@ function bindCommon() {
     document.getElementById("modeText").textContent = "专注计时模式（无时间限制）";
   });
 
-  // 完成专注按钮
+  // 完成并记录按钮
   el.finishFocusBtn.addEventListener("click", async () => {
-    if (!timer.isRunning()) return;
+    if (timer.isRunning()) timer.syncWithClock();
 
     const elapsed = timer.getElapsedSeconds();
+    if (elapsed <= 0) {
+      showMessage("还没有可记录的专注时间。");
+      return;
+    }
+
     const minutes = Math.max(1, Math.floor(elapsed / 60)); // 至少 1 分钟
 
     if (elapsed < 60) {
       showMessage("专注时间不足 1 分钟，将按 1 分钟记录");
     }
 
-    await timer.pause();
+    if (timer.isRunning()) {
+      await timer.pause();
+    }
     await timer.reset();
     updateTimer();
     el.finishFocusBtn.style.display = "none";
