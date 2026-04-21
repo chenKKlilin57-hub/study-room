@@ -2,7 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
 import { Auth } from './auth.js?v=2';
-import { Timer } from './timer.js?v=3';
+import { Timer } from './timer.js?v=4';
 import { TaskManager } from './tasks.js?v=2';
 import { Heatmap } from './heatmap.js?v=2';
 
@@ -21,6 +21,10 @@ let selectedTaskDate = null;
 let currentRankType = "daily";
 let dailyGoal = 240;
 let reviewDirty = false;
+let reviewSaveTimer = null;
+let reviewSaveDate = null;
+let reviewSaving = false;
+let timerCompletionInProgress = false;
 let currentTodayMinutes = 0;
 let undoTimer = null;
 let pendingTaskDelete = null; // { taskId }
@@ -148,6 +152,12 @@ const el = {
   closeUsernameDrawerBtn: $("closeUsernameDrawerBtn"),
   usernameInput: $("usernameInput"),
   saveUsernameBtn: $("saveUsernameBtn"),
+  breakdownDrawer: $("breakdownDrawer"),
+  breakdownDrawerOverlay: $("breakdownDrawerOverlay"),
+  closeBreakdownDrawerBtn: $("closeBreakdownDrawerBtn"),
+  breakdownTitle: $("breakdownTitle"),
+  breakdownSubtitle: $("breakdownSubtitle"),
+  breakdownList: $("breakdownList"),
   displayDate: $("displayDate"),
   checkinStatus: $("checkinStatus"),
   streakDays: $("streakDays"),
@@ -741,9 +751,82 @@ async function loadLeaderboard() {
     const isMe = (row.user_id && currentUser && row.user_id === currentUser.id) || (row.username === currentUsername);
     const div = document.createElement("div");
     div.className = "item" + (isMe ? " me" : "");
-    div.innerHTML = `<div style="width:34px;text-align:center">${idx === 0 ? '👑' : idx + 1}</div><div class="main"><div>${esc(row.username || "学习者")}${isMe ? '<span style="font-size:12px;color:var(--accent);">（我）</span>' : ""}</div><div class="small muted">${currentRankType === "daily" ? "今日学习时长" : "总学习时长"}：${formatMinutes(mins)}</div></div>`;
+    div.innerHTML = `<div style="width:34px;text-align:center">${idx === 0 ? '👑' : idx + 1}</div><div class="main"><div>${esc(row.username || "学习者")}${isMe ? '<span style="font-size:12px;color:var(--accent);">（我）</span>' : ""}</div><div class="small muted">${currentRankType === "daily" ? "今日学习时长" : "总学习时长"}：${formatMinutes(mins)}</div></div><button class="btn ghost leaderboard-detail-btn" style="padding:6px 10px;font-size:12px;">组成</button>`;
+    div.querySelector(".leaderboard-detail-btn").addEventListener("click", () => {
+      openBreakdownDrawer(row, mins);
+    });
     el.leaderList.appendChild(div);
   });
+}
+
+async function openBreakdownDrawer(row, totalMinutes) {
+  if (!row.user_id) {
+    showMessage("暂时无法查看该用户的用时组成。", "error");
+    return;
+  }
+
+  const username = row.username || "学习者";
+  const rangeText = currentRankType === "daily" ? "今日" : "累计";
+
+  if (el.breakdownTitle) el.breakdownTitle.textContent = `${username} 的用时组成`;
+  if (el.breakdownSubtitle) el.breakdownSubtitle.textContent = `${rangeText}总时长：${formatMinutes(totalMinutes)}`;
+  if (el.breakdownList) el.breakdownList.innerHTML = '<div class="subject-empty">加载中...</div>';
+
+  el.breakdownDrawer?.classList.add("show");
+  el.breakdownDrawerOverlay?.classList.add("show");
+
+  const result = await timer.loadUserSubjectBreakdown(row.user_id, currentRankType);
+  if (!el.breakdownList) return;
+
+  if (!result.success || !result.subjects.length) {
+    el.breakdownList.innerHTML = '<div class="subject-empty">暂无可展示的科目组成</div>';
+    return;
+  }
+
+  el.breakdownList.innerHTML = "";
+  result.subjects.forEach(subject => {
+    const item = document.createElement("div");
+    item.className = "subject-item";
+    item.innerHTML = `
+      <div class="subject-name">${esc(subject.name)}</div>
+      <div class="subject-bar-container">
+        <div class="subject-bar" style="width:${subject.percent}%"></div>
+      </div>
+      <div class="subject-duration">${formatMinutes(subject.minutes)}</div>
+    `;
+    el.breakdownList.appendChild(item);
+  });
+}
+
+function closeBreakdownDrawer() {
+  el.breakdownDrawer?.classList.remove("show");
+  el.breakdownDrawerOverlay?.classList.remove("show");
+}
+
+async function completeTimerIfNeeded() {
+  if (timerCompletionInProgress || timer.isFreeMode || timer.getRemaining() > 0) return;
+
+  timerCompletionInProgress = true;
+  try {
+    const minutes = Math.floor(timer.getSelectedDuration() / 60);
+    timer.stop();
+    updateTimer();
+    await saveStudySession(minutes);
+    await timer.clearTimerState();
+    await timer.reset(true);
+    updateTimer();
+    el.finishFocusBtn.style.display = "none";
+    el.statusText.textContent = "已完成专注";
+  } finally {
+    timerCompletionInProgress = false;
+  }
+}
+
+async function syncVisibleTimer() {
+  if (!timer.isRunning()) return;
+  timer.syncWithClock();
+  updateTimer();
+  await completeTimerIfNeeded();
 }
 
 // 历史记录
@@ -934,9 +1017,28 @@ async function changeTaskDate(days) {
 }
 
 // 复盘
-async function autoSaveReview() {
-  if (!reviewDirty) return;
-  await saveReview(selectedTaskDate);
+function setReviewSaveStatus(text) {
+  const saveBtn = document.getElementById("saveReviewBtn");
+  if (saveBtn) saveBtn.textContent = text;
+}
+
+function scheduleReviewAutoSave() {
+  reviewDirty = true;
+  reviewSaveDate = selectedTaskDate;
+  setReviewSaveStatus("正在输入...");
+  if (reviewSaveTimer) clearTimeout(reviewSaveTimer);
+  reviewSaveTimer = setTimeout(async () => {
+    await autoSaveReview(reviewSaveDate);
+  }, 700);
+}
+
+async function autoSaveReview(date = selectedTaskDate) {
+  if (!reviewDirty || reviewSaving) return;
+  if (reviewSaveTimer) {
+    clearTimeout(reviewSaveTimer);
+    reviewSaveTimer = null;
+  }
+  await saveReview(date);
   reviewDirty = false;
 }
 
@@ -961,29 +1063,48 @@ async function loadReview(date) {
     reviewInput.innerHTML = localStorage.getItem("review_" + date) || "";
   }
   reviewDirty = false;
+  setReviewSaveStatus("自动保存");
 }
 
 async function saveReview(date) {
   const reviewInput = document.getElementById("reviewInput");
-  const saveBtn     = document.getElementById("saveReviewBtn");
   if (!reviewInput) return;
 
   const content = reviewInput.innerHTML;
   const user    = auth.getCurrentUser();
 
-  if (user) {
-    await supabase.from("daily_reviews").upsert(
-      { user_id: user.id, review_date: date, content, updated_at: new Date().toISOString() },
-      { onConflict: "user_id,review_date" }
-    );
-  } else {
-    localStorage.setItem("review_" + date, content);
-  }
+  reviewSaving = true;
+  setReviewSaveStatus("保存中...");
+  try {
+    if (user) {
+      await supabase.from("daily_reviews").upsert(
+        { user_id: user.id, review_date: date, content, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,review_date" }
+      );
+    } else {
+      localStorage.setItem("review_" + date, content);
+    }
 
-  if (saveBtn) {
-    saveBtn.textContent = "已保存";
-    setTimeout(() => { saveBtn.textContent = "保存"; }, 1500);
+    setReviewSaveStatus("已自动保存");
+  } catch (err) {
+    console.error("saveReview error:", err);
+    setReviewSaveStatus("保存失败");
+  } finally {
+    reviewSaving = false;
   }
+}
+
+function insertReviewChecklist() {
+  const reviewInput = document.getElementById("reviewInput");
+  if (!reviewInput) return;
+
+  reviewInput.focus();
+  document.execCommand(
+    "insertHTML",
+    false,
+    '<div><label><input type="checkbox"> 待检查事项</label></div>'
+  );
+  scheduleReviewAutoSave();
 }
 
 function openEditDrawer(task) {
@@ -1434,6 +1555,13 @@ function bindCommon() {
     showFocusCompleteToast(minutes);
   });
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      syncVisibleTimer();
+    }
+  });
+  window.addEventListener("focus", syncVisibleTimer);
+
   // 任务优先级样式
   const prioritySelect = document.getElementById("taskPrioritySelect");
   if (prioritySelect) {
@@ -1654,11 +1782,13 @@ function bindCommon() {
   // 复盘保存按钮
   const saveReviewBtn = document.getElementById("saveReviewBtn");
   if (saveReviewBtn) {
-    saveReviewBtn.addEventListener("click", () => saveReview(selectedTaskDate));
+    saveReviewBtn.addEventListener("click", () => autoSaveReview());
   }
+  document.getElementById("reviewChecklistBtn")?.addEventListener("click", insertReviewChecklist);
   const reviewInput = document.getElementById("reviewInput");
   if (reviewInput) {
-    reviewInput.addEventListener("input", () => { reviewDirty = true; });
+    reviewInput.addEventListener("input", scheduleReviewAutoSave);
+    reviewInput.addEventListener("change", scheduleReviewAutoSave);
   }
 
   // 排行榜切换
@@ -1680,6 +1810,8 @@ function bindCommon() {
 
   el.refreshLeaderboardBtn.addEventListener("click", loadLeaderboard);
   el.refreshHistoryBtn.addEventListener("click", loadHistory);
+  el.closeBreakdownDrawerBtn?.addEventListener("click", closeBreakdownDrawer);
+  el.breakdownDrawerOverlay?.addEventListener("click", closeBreakdownDrawer);
 
   // 目标设置
   el.editGoalBtn.addEventListener("click", () => {

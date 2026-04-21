@@ -7,6 +7,9 @@ export class Timer {
     this.remaining = 7200;
     this.selectedDuration = 7200;
     this.startedAt = null;
+    this.runStartedAt = null;
+    this.remainingAtRunStart = 7200;
+    this.elapsedAtRunStart = 0;
     this.timerMode = "countdown"; // "countdown" 或 "countup"
     this.isFreeMode = false; // 专注计时模式（无限制）
     this.elapsedInFreeMode = 0; // 专注计时模式下的累计时间
@@ -22,7 +25,7 @@ export class Timer {
 
     const state = {
       user_id: user.id,
-      started_at: new Date(this.startedAt).toISOString(),
+      started_at: new Date().toISOString(),
       duration: this.selectedDuration,
       remaining: this.remaining,
       timer_mode: this.timerMode,
@@ -158,6 +161,21 @@ export class Timer {
     }
   }
 
+  syncWithClock() {
+    if (!this.timer && !this.starting) return false;
+    if (!this.runStartedAt) return false;
+
+    const elapsedSinceRunStart = Math.max(0, Math.floor((Date.now() - this.runStartedAt) / 1000));
+
+    if (this.isFreeMode) {
+      this.elapsedInFreeMode = this.elapsedAtRunStart + elapsedSinceRunStart;
+    } else {
+      this.remaining = Math.max(0, this.remainingAtRunStart - elapsedSinceRunStart);
+    }
+
+    return true;
+  }
+
   // 开始计时
   async start(onTick, onComplete) {
     const currentUser = this.auth.getCurrentUser();
@@ -166,6 +184,9 @@ export class Timer {
     this.starting = true;
     this.startCancelled = false;
     if (!this.startedAt) this.startedAt = Date.now();
+    this.runStartedAt = Date.now();
+    this.remainingAtRunStart = this.remaining;
+    this.elapsedAtRunStart = this.elapsedInFreeMode;
 
     try {
       // 保存计时状态到数据库
@@ -184,11 +205,11 @@ export class Timer {
     }
 
     this.timer = setInterval(async () => {
+      this.syncWithClock();
+
       if (this.isFreeMode) {
-        this.elapsedInFreeMode += 1;
         if (onTick) onTick();
       } else {
-        this.remaining -= 1;
         if (onTick) onTick();
 
         if (this.remaining <= 0) {
@@ -196,7 +217,7 @@ export class Timer {
           const minutes = Math.floor(this.selectedDuration / 60);
           if (onComplete) await onComplete(minutes);
           await this.clearTimerState();
-          await this.reset(false);
+          await this.reset(true);
         }
       }
 
@@ -220,6 +241,7 @@ export class Timer {
     }
 
     if (this.timer) {
+      this.syncWithClock();
       clearInterval(this.timer);
       this.timer = null;
       // 暂停时清除数据库状态
@@ -237,6 +259,7 @@ export class Timer {
     }
 
     if (this.timer) {
+      this.syncWithClock();
       clearInterval(this.timer);
       this.timer = null;
     }
@@ -249,6 +272,9 @@ export class Timer {
     if (clearStartTime) {
       this.startedAt = null;
     }
+    this.runStartedAt = null;
+    this.remainingAtRunStart = this.selectedDuration;
+    this.elapsedAtRunStart = 0;
     this.timerMode = "countdown";
     this.isFreeMode = false;
     this.elapsedInFreeMode = 0;
@@ -387,6 +413,51 @@ export class Timer {
     } catch (err) {
       console.error("loadSubjectStats error:", err);
       return { success: false, subjects: [] };
+    }
+  }
+
+  async loadUserSubjectBreakdown(userId, rankType = "daily") {
+    if (!userId) {
+      return { success: false, subjects: [], totalMinutes: 0 };
+    }
+
+    try {
+      let query = this.supabase
+        .from("study_sessions")
+        .select("duration_minutes, subject, created_at")
+        .eq("user_id", userId);
+
+      if (rankType === "daily") {
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        query = query.gte("created_at", startDate.toISOString());
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const subjectMap = new Map();
+      let totalMinutes = 0;
+
+      (data || []).forEach(session => {
+        const subject = session.subject || "未分类";
+        const mins = Number(session.duration_minutes || 0);
+        subjectMap.set(subject, (subjectMap.get(subject) || 0) + mins);
+        totalMinutes += mins;
+      });
+
+      const subjects = Array.from(subjectMap.entries())
+        .map(([name, minutes]) => ({
+          name,
+          minutes,
+          percent: totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0
+        }))
+        .sort((a, b) => b.minutes - a.minutes);
+
+      return { success: true, subjects, totalMinutes };
+    } catch (err) {
+      console.error("loadUserSubjectBreakdown error:", err);
+      return { success: false, subjects: [], totalMinutes: 0 };
     }
   }
 

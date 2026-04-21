@@ -1423,10 +1423,11 @@
               <div id="reviewArea" style="margin-top:16px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                   <span style="font-size:14px;font-weight:600;">复盘 · <span id="reviewDateLabel" style="font-weight:400;color:var(--text-muted);font-size:13px;"></span></span>
-                  <button class="btn ghost" id="saveReviewBtn" style="padding:6px 12px;font-size:13px;">保存</button>
+                  <button class="btn ghost" id="saveReviewBtn" style="padding:6px 12px;font-size:13px;pointer-events:none;">自动保存</button>
                 </div>
                 <div id="reviewToolbar" style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
                   <button type="button" onclick="document.execCommand('bold')" style="padding:4px 10px;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;" title="加粗">B</button>
+                  <button type="button" id="reviewChecklistBtn" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;" title="检查清单">☑</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#c0392b')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#c0392b;cursor:pointer;font-weight:600;" title="红色">A</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#2471a3')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#2471a3;cursor:pointer;font-weight:600;" title="蓝色">A</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#2c2724')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;" title="黑色">A</button>
@@ -1526,7 +1527,7 @@
     </div>
   </div>
 
-  <script type="module" src="./js/main.js?v=5"></script>
+  <script type="module" src="./js/main.js?v=6"></script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>
@@ -1596,6 +1597,18 @@
     </div>
     <div class="auth-note" style="margin-bottom:16px;">用户名会显示在顶部和排行榜中，最多 30 个字符。</div>
     <button class="btn primary" id="saveUsernameBtn" style="width:100%; padding:14px; margin-top:8px;">保存用户名</button>
+  </div>
+
+  <div class="drawer-overlay" id="breakdownDrawerOverlay"></div>
+  <div class="task-drawer" id="breakdownDrawer">
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-title" id="breakdownTitle">用时组成</div>
+        <div class="auth-note" id="breakdownSubtitle" style="margin-top:4px;"></div>
+      </div>
+      <button class="drawer-close" id="closeBreakdownDrawerBtn">×</button>
+    </div>
+    <div id="breakdownList"></div>
   </div>
 
   <!-- 添加子任务抽屉 -->
