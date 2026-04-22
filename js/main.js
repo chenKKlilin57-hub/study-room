@@ -131,7 +131,6 @@ const el = {
   taskStatsText: $("taskStatsText"),
   taskTotalTime: $("taskTotalTime"),
   taskTotalText: $("taskTotalText"),
-  taskWarning: $("taskWarning"),
   mobileAddTaskBtn: $("openDrawerBtn"),
   taskDrawer: $("taskDrawer"),
   drawerOverlay: $("drawerOverlay"),
@@ -1169,14 +1168,6 @@ function renderTasks() {
 
   el.taskTotalText.textContent = timeText;
   el.taskTotalTime.style.display = "flex";
-
-  if (stats.isOverload) {
-    el.taskWarning.style.display = "block";
-    el.taskTotalTime.classList.add("overload");
-  } else {
-    el.taskWarning.style.display = "none";
-    el.taskTotalTime.classList.remove("overload");
-  }
 
   const sortedTasks = taskManager.getSortedTasks();
   const parentTasks = sortedTasks.filter(t => !t.parent_id);
