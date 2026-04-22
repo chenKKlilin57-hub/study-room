@@ -1,8 +1,8 @@
-const CACHE_NAME = "zixishi-v1";
+const CACHE_NAME = "zixishi-v2";
 const STATIC_ASSETS = [
   "/study-room/",
   "/study-room/index.html",
-  "/study-room/js/main.js",
+  "/study-room/js/main.js?v=8",
   "/study-room/js/timer.js",
   "/study-room/js/auth.js",
   "/study-room/js/config.js",
