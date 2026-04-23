@@ -1249,6 +1249,7 @@
                     <input id="loginPassword" type="password" placeholder="密码" />
                   </div>
                   <button class="btn primary" id="loginBtn" style="width:100%">登录</button>
+                  <div class="auth-status hidden" id="loginStatus" role="status" aria-live="polite"></div>
                   <div class="auth-note">第一次注册后，如果系统要求邮箱确认，请先去邮箱点击确认链接，再回来登录。</div>
                 </div>
 
@@ -1545,7 +1546,8 @@
     </div>
   </div>
 
-  <script type="module" src="./js/main.js?v=8"></script>
+  <script src="./js/supabase-js.umd.js?v=1"></script>
+  <script type="module" src="./js/main.js?v=10"></script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>

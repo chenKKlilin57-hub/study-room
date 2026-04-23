@@ -115,8 +115,8 @@ export class Auth {
     if (!this.currentUser) return;
     try {
       const fallbackUsername = (
-        this.currentUser.user_metadata?.username ||
-        this.currentUser.email?.split("@")[0] ||
+        (this.currentUser.user_metadata && this.currentUser.user_metadata.username) ||
+        (this.currentUser.email ? this.currentUser.email.split("@")[0] : "") ||
         "学习者"
       ).slice(0, 30);
 

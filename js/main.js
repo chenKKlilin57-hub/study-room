@@ -1,5 +1,4 @@
 // 主应用入口文件
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
 import { Auth } from './auth.js?v=2';
 import { Timer } from './timer.js?v=5';
@@ -7,6 +6,7 @@ import { TaskManager } from './tasks.js?v=2';
 import { Heatmap } from './heatmap.js?v=2';
 
 // 初始化 Supabase
+const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
 
 // 初始化模块
@@ -36,15 +36,33 @@ const $ = (id) => document.getElementById(id);
 // 工具函数
 const loadJSON = (k, f) => {
   try {
-    const raw = localStorage.getItem(k);
+    const raw = storageGet(k);
     return raw ? JSON.parse(raw) : f;
   } catch {
     return f;
   }
 };
 
-const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const saveJSON = (k, v) => storageSet(k, JSON.stringify(v));
 let msgToastTimer = null;
+const storageGet = (key) => {
+  try {
+    return window.localStorage ? window.localStorage.getItem(key) : null;
+  } catch (err) {
+    console.warn("localStorage get failed:", err);
+    return null;
+  }
+};
+const storageSet = (key, value) => {
+  try {
+    if (!window.localStorage) return false;
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn("localStorage set failed:", err);
+    return false;
+  }
+};
 const showMessage = (m, type = "") => {
   if (!m) { console.warn("[showMessage] 空消息被拦截", new Error().stack); return; }
   const el = document.getElementById("msgToast");
@@ -58,7 +76,12 @@ const showMessage = (m, type = "") => {
     msgToastTimer = null;
   }, 3000);
 };
-const esc = (s) => String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+const esc = (s) => String(s)
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#39;");
 
 const formatMinutes = (min) => {
   if (min < 60) return `${min}m`;
@@ -68,14 +91,17 @@ const formatMinutes = (min) => {
 };
 
 const getDisplayName = () => {
-  const profileName = auth.getProfile()?.username?.trim();
+  const profile = auth.getProfile();
+  const profileName = profile && profile.username ? profile.username.trim() : "";
   if (profileName) return profileName;
 
   const currentUser = auth.getCurrentUser();
-  const metadataName = currentUser?.user_metadata?.username?.trim();
+  const metadataName = currentUser && currentUser.user_metadata && currentUser.user_metadata.username
+    ? currentUser.user_metadata.username.trim()
+    : "";
   if (metadataName) return metadataName;
 
-  const emailName = currentUser?.email?.split("@")[0]?.trim();
+  const emailName = currentUser && currentUser.email ? currentUser.email.split("@")[0].trim() : "";
   return emailName || "已登录";
 };
 
@@ -105,6 +131,7 @@ const el = {
   loginEmail: $("loginEmail"),
   loginPassword: $("loginPassword"),
   loginBtn: $("loginBtn"),
+  loginStatus: $("loginStatus"),
   signupUsername: $("signupUsername"),
   signupEmail: $("signupEmail"),
   signupPassword: $("signupPassword"),
@@ -204,7 +231,7 @@ function updateAuthUI() {
     el.authView.classList.add("hidden");
     el.studyView.classList.remove("hidden");
     el.logoutBtn.classList.remove("hidden");
-    el.editUsernameBtn?.classList.remove("hidden");
+    if (el.editUsernameBtn) el.editUsernameBtn.classList.remove("hidden");
     el.checkinArea.classList.remove("hidden");
     loadSubjectStats("today");
   } else {
@@ -213,7 +240,7 @@ function updateAuthUI() {
     el.authView.classList.remove("hidden");
     el.studyView.classList.add("hidden");
     el.logoutBtn.classList.add("hidden");
-    el.editUsernameBtn?.classList.add("hidden");
+    if (el.editUsernameBtn) el.editUsernameBtn.classList.add("hidden");
     el.checkinArea.classList.add("hidden");
     renderTasks();
     heatmap.clear();
@@ -235,18 +262,26 @@ function setAppStatus(text, type = "") {
   else el.appStatus.classList.remove("hidden");
 }
 
-function setSignupStatus(message, type = "ok") {
-  if (!el.signupStatus) return;
+function setAuthStatus(statusEl, message, type = "ok") {
+  if (!statusEl) return;
   if (!message) {
-    el.signupStatus.innerHTML = "";
-    el.signupStatus.classList.add("hidden");
-    el.signupStatus.classList.remove("error");
+    statusEl.innerHTML = "";
+    statusEl.classList.add("hidden");
+    statusEl.classList.remove("error");
     return;
   }
 
-  el.signupStatus.classList.remove("hidden", "error");
-  if (type === "error") el.signupStatus.classList.add("error");
-  el.signupStatus.innerHTML = message;
+  statusEl.classList.remove("hidden", "error");
+  if (type === "error") statusEl.classList.add("error");
+  statusEl.innerHTML = message;
+}
+
+function setLoginStatus(message, type = "ok") {
+  setAuthStatus(el.loginStatus, message, type);
+}
+
+function setSignupStatus(message, type = "ok") {
+  setAuthStatus(el.signupStatus, message, type);
 }
 
 function setButtonLoading(button, loadingText, isLoading) {
@@ -462,13 +497,17 @@ async function login() {
   const email = el.loginEmail.value.trim();
   const password = el.loginPassword.value.trim();
 
+  setLoginStatus("");
   setButtonLoading(el.loginBtn, "登录中...", true);
   const result = await auth.login(email, password);
   setButtonLoading(el.loginBtn, "", false);
 
   if (result.success) {
-    updateAuthUI();
+    setLoginStatus("");
+    await auth.ensureProfile();
+    await refreshSession();
   } else {
+    setLoginStatus(`<b>登录没有完成</b>${esc(result.message)}`, "error");
     showMessage(result.message, "error");
   }
 }
@@ -485,21 +524,23 @@ function openUsernameDrawer() {
   if (el.usernameInput) {
     el.usernameInput.value = getDisplayName();
   }
-  el.usernameDrawer?.classList.add("show");
-  el.usernameDrawerOverlay?.classList.add("show");
-  setTimeout(() => el.usernameInput?.focus(), 50);
+  if (el.usernameDrawer) el.usernameDrawer.classList.add("show");
+  if (el.usernameDrawerOverlay) el.usernameDrawerOverlay.classList.add("show");
+  setTimeout(() => {
+    if (el.usernameInput) el.usernameInput.focus();
+  }, 50);
 }
 
 function closeUsernameDrawer() {
-  el.usernameDrawer?.classList.remove("show");
-  el.usernameDrawerOverlay?.classList.remove("show");
+  if (el.usernameDrawer) el.usernameDrawer.classList.remove("show");
+  if (el.usernameDrawerOverlay) el.usernameDrawerOverlay.classList.remove("show");
 }
 
 async function saveUsername() {
   const currentUser = auth.getCurrentUser();
   if (!currentUser || auth.isLoading()) return;
 
-  const nextName = el.usernameInput?.value?.trim() || "";
+  const nextName = el.usernameInput && el.usernameInput.value ? el.usernameInput.value.trim() : "";
   setButtonLoading(el.saveUsernameBtn, "保存中...", true);
   const result = await auth.updateUsername(nextName);
   setButtonLoading(el.saveUsernameBtn, "", false);
@@ -520,7 +561,7 @@ async function saveStudySession(minutes) {
 
   // If no manual subject, fall back to the linked task's name
   const linkedId = (taskLinkSelect && taskLinkSelect.value) || lastLinkedTaskId;
-  console.log("[debug] subjectInput:", subject, "| taskLinkSelect.value:", taskLinkSelect?.value, "| lastLinkedTaskId:", lastLinkedTaskId, "| linkedId:", linkedId);
+  console.log("[debug] subjectInput:", subject, "| taskLinkSelect.value:", taskLinkSelect ? taskLinkSelect.value : "", "| lastLinkedTaskId:", lastLinkedTaskId, "| linkedId:", linkedId);
   console.log("[debug] currentTasks:", taskManager.getCurrentTasks().map(t => ({id: t.id, type: typeof t.id, text: t.text})));
   if (!subject && linkedId) {
     // 从数据库查找任务，避免 getCurrentTasks() 按日期过滤导致的任务丢失
@@ -553,7 +594,8 @@ async function saveStudySession(minutes) {
     const taskLinkSelect = document.getElementById("taskLinkSelect");
     if (taskLinkSelect && taskLinkSelect.value) {
       const linkedTaskId = taskLinkSelect.value;
-      const linkedTaskText = taskLinkSelect.options[taskLinkSelect.selectedIndex]?.text || "该任务";
+      const linkedOption = taskLinkSelect.options[taskLinkSelect.selectedIndex];
+      const linkedTaskText = linkedOption && linkedOption.text ? linkedOption.text : "该任务";
       const checkinNote = checkinResult.success ? `已签到，连续 ${checkinResult.streak} 天 🔥` : "";
       showTaskLinkPrompt(linkedTaskId, linkedTaskText, checkinNote);
     } else if (checkinResult.success) {
@@ -796,8 +838,8 @@ async function openBreakdownDrawer(row, totalMinutes) {
   if (el.breakdownSubtitle) el.breakdownSubtitle.textContent = `${rangeText}总时长：${formatMinutes(totalMinutes)}`;
   if (el.breakdownList) el.breakdownList.innerHTML = '<div class="subject-empty">加载中...</div>';
 
-  el.breakdownDrawer?.classList.add("show");
-  el.breakdownDrawerOverlay?.classList.add("show");
+  if (el.breakdownDrawer) el.breakdownDrawer.classList.add("show");
+  if (el.breakdownDrawerOverlay) el.breakdownDrawerOverlay.classList.add("show");
 
   const result = await timer.loadUserSubjectBreakdown(row.user_id, currentRankType);
   if (!el.breakdownList) return;
@@ -823,8 +865,8 @@ async function openBreakdownDrawer(row, totalMinutes) {
 }
 
 function closeBreakdownDrawer() {
-  el.breakdownDrawer?.classList.remove("show");
-  el.breakdownDrawerOverlay?.classList.remove("show");
+  if (el.breakdownDrawer) el.breakdownDrawer.classList.remove("show");
+  if (el.breakdownDrawerOverlay) el.breakdownDrawerOverlay.classList.remove("show");
 }
 
 async function completeTimerIfNeeded() {
@@ -1082,9 +1124,9 @@ async function loadReview(date) {
       .eq("user_id", user.id)
       .eq("review_date", date)
       .maybeSingle();
-    reviewInput.innerHTML = data?.content ?? "";
+    reviewInput.innerHTML = data && data.content ? data.content : "";
   } else {
-    reviewInput.innerHTML = localStorage.getItem("review_" + date) || "";
+    reviewInput.innerHTML = storageGet("review_" + date) || "";
   }
   reviewDirty = false;
   setReviewSaveStatus("自动保存");
@@ -1106,7 +1148,7 @@ async function saveReview(date) {
         { onConflict: "user_id,review_date" }
       );
     } else {
-      localStorage.setItem("review_" + date, content);
+      storageSet("review_" + date, content);
     }
 
     setReviewSaveStatus("已自动保存");
@@ -1440,6 +1482,7 @@ function bindTabs() {
     const tab = btn.getAttribute("data-auth-tab");
     $("loginPane").classList.toggle("hidden", tab !== "login");
     $("signupPane").classList.toggle("hidden", tab !== "signup");
+    if (tab === "login") setLoginStatus("");
     if (tab === "signup") setSignupStatus("");
   }));
   
@@ -1474,7 +1517,7 @@ function bindCommon() {
   el.themeBtn.addEventListener("click", () => {
     document.body.classList.toggle("dark");
     const dark = document.body.classList.contains("dark");
-    localStorage.setItem(APP_CONFIG.THEME_KEY, dark ? "dark" : "light");
+    storageSet(APP_CONFIG.THEME_KEY, dark ? "dark" : "light");
     el.themeBtn.textContent = dark ? "☀" : "☾";
   });
 
@@ -1486,17 +1529,20 @@ function bindCommon() {
 
   // 认证按钮
   el.logoutBtn.addEventListener("click", logout);
-  el.editUsernameBtn?.addEventListener("click", openUsernameDrawer);
+  if (el.editUsernameBtn) el.editUsernameBtn.addEventListener("click", openUsernameDrawer);
   el.loginBtn.addEventListener("click", login);
   el.signupBtn.addEventListener("click", signup);
+  [el.loginEmail, el.loginPassword].forEach(input => {
+    if (input) input.addEventListener("input", () => setLoginStatus(""));
+  });
   [el.signupUsername, el.signupEmail, el.signupPassword].forEach(input => {
-    input?.addEventListener("input", () => setSignupStatus(""));
+    if (input) input.addEventListener("input", () => setSignupStatus(""));
   });
 
-  el.closeUsernameDrawerBtn?.addEventListener("click", closeUsernameDrawer);
-  el.usernameDrawerOverlay?.addEventListener("click", closeUsernameDrawer);
-  el.saveUsernameBtn?.addEventListener("click", saveUsername);
-  el.usernameInput?.addEventListener("keydown", (e) => {
+  if (el.closeUsernameDrawerBtn) el.closeUsernameDrawerBtn.addEventListener("click", closeUsernameDrawer);
+  if (el.usernameDrawerOverlay) el.usernameDrawerOverlay.addEventListener("click", closeUsernameDrawer);
+  if (el.saveUsernameBtn) el.saveUsernameBtn.addEventListener("click", saveUsername);
+  if (el.usernameInput) el.usernameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") saveUsername();
   });
 
@@ -1718,7 +1764,8 @@ function bindCommon() {
     const taskId = document.getElementById("editTaskId").value;
     const text = document.getElementById("editTaskInput").value.trim();
     const duration = parseInt(document.getElementById("editTimeInput").value);
-    const priority = document.querySelector("[data-edit-priority].active-high, [data-edit-priority].active-medium, [data-edit-priority].active-low")?.dataset.editPriority || "medium";
+    const activePriorityBtn = document.querySelector("[data-edit-priority].active-high, [data-edit-priority].active-medium, [data-edit-priority].active-low");
+    const priority = activePriorityBtn ? activePriorityBtn.dataset.editPriority : "medium";
 
     if (!text) { showMessage("请输入任务内容。"); return; }
     if (!duration || duration <= 0) { showMessage("请输入有效时长。"); return; }
@@ -1807,7 +1854,8 @@ function bindCommon() {
   if (saveReviewBtn) {
     saveReviewBtn.addEventListener("click", () => autoSaveReview());
   }
-  document.getElementById("reviewChecklistBtn")?.addEventListener("click", insertReviewChecklist);
+  const reviewChecklistBtn = document.getElementById("reviewChecklistBtn");
+  if (reviewChecklistBtn) reviewChecklistBtn.addEventListener("click", insertReviewChecklist);
   const reviewInput = document.getElementById("reviewInput");
   if (reviewInput) {
     reviewInput.addEventListener("input", scheduleReviewAutoSave);
@@ -1833,8 +1881,8 @@ function bindCommon() {
 
   el.refreshLeaderboardBtn.addEventListener("click", loadLeaderboard);
   el.refreshHistoryBtn.addEventListener("click", loadHistory);
-  el.closeBreakdownDrawerBtn?.addEventListener("click", closeBreakdownDrawer);
-  el.breakdownDrawerOverlay?.addEventListener("click", closeBreakdownDrawer);
+  if (el.closeBreakdownDrawerBtn) el.closeBreakdownDrawerBtn.addEventListener("click", closeBreakdownDrawer);
+  if (el.breakdownDrawerOverlay) el.breakdownDrawerOverlay.addEventListener("click", closeBreakdownDrawer);
 
   // 目标设置
   el.editGoalBtn.addEventListener("click", () => {
@@ -1971,7 +2019,7 @@ async function refreshSession() {
 async function main() {
   try {
     // 主题初始化
-    const theme = localStorage.getItem(APP_CONFIG.THEME_KEY);
+    const theme = storageGet(APP_CONFIG.THEME_KEY);
     if (theme === "dark") {
       document.body.classList.add("dark");
       el.themeBtn.textContent = "☀";
@@ -1992,14 +2040,14 @@ async function main() {
     setAppStatus("正在初始化...");
     
     // 每日提醒
-    if (!localStorage.getItem("today_opened_v2_" + getLocalDateISO())) {
+    if (!storageGet("today_opened_v2_" + getLocalDateISO())) {
       setTimeout(() => showMessage("今天也要保持专注 🔥"), 800);
-      localStorage.setItem("today_opened_v2_" + getLocalDateISO(), "true");
+      storageSet("today_opened_v2_" + getLocalDateISO(), "true");
     }
     
     // 监听认证状态变化
     supabase.auth.onAuthStateChange((event, session) => {
-      auth.setCurrentUser(session?.user || null);
+      auth.setCurrentUser(session && session.user ? session.user : null);
       updateAuthUI();
 
       if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
