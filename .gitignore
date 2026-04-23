@@ -1,0 +1,11 @@
+.DS_Store
+.claude/
+
+# Local/editor noise
+*.swp
+*.swo
+
+# Local environment files
+.env
+.env.*
+
