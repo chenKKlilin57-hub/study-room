@@ -808,8 +808,10 @@ async function loadLeaderboard() {
   setButtonLoading(el.refreshLeaderboardBtn, "", false);
   
   el.leaderList.innerHTML = "";
-  
-  if (!result.success || !result.data || !result.data.length) {
+
+  const rows = (result.success && result.data ? result.data : []).filter(row => Number(row.total_minutes || 0) > 0);
+
+  if (!rows.length) {
     el.leaderList.innerHTML = `<div class="item"><div class="main muted">${currentRankType === "daily" ? "看看哪位小杰泥先上榜～" : "暂时还没有总榜数据。"}</div></div>`;
     return;
   }
@@ -817,7 +819,7 @@ async function loadLeaderboard() {
   const currentUser = auth.getCurrentUser();
   const currentUsername = getDisplayName();
   
-  result.data.forEach((row, idx) => {
+  rows.forEach((row, idx) => {
     const mins = Number(row.total_minutes || 0);
     const isMe = (row.user_id && currentUser && row.user_id === currentUser.id) || (row.username === currentUsername);
     const div = document.createElement("div");
