@@ -1,11 +1,11 @@
-const CACHE_NAME = "zixishi-v5";
+const CACHE_NAME = "zixishi-v6";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
   "./app.html",
   "./js/supabase-js.umd.js?v=1",
-  "./js/main.js?v=10",
-  "./js/timer.js?v=5",
+  "./js/main.js?v=11",
+  "./js/timer.js?v=6",
   "./js/auth.js?v=2",
   "./js/config.js?v=2",
   "./js/heatmap.js?v=2",
