@@ -457,36 +457,18 @@ export class Timer {
     }
 
     try {
-      let query = this.supabase
-        .from("study_sessions")
-        .select("duration_minutes, subject, ended_at")
-        .eq("user_id", userId);
-
-      if (rankType === "daily") {
-        const { startISO, endISO } = this.getBeijingDayBounds();
-        query = query.gte("ended_at", startISO).lt("ended_at", endISO);
-      }
-
-      const { data, error } = await query;
+      const { data, error } = await this.supabase.rpc("get_user_subject_breakdown", {
+        target_user_id: userId,
+        rank_type: rankType
+      });
       if (error) throw error;
 
-      const subjectMap = new Map();
-      let totalMinutes = 0;
-
-      (data || []).forEach(session => {
-        const subject = session.subject || "未分类";
-        const mins = Number(session.duration_minutes || 0);
-        subjectMap.set(subject, (subjectMap.get(subject) || 0) + mins);
-        totalMinutes += mins;
-      });
-
-      const subjects = Array.from(subjectMap.entries())
-        .map(([name, minutes]) => ({
-          name,
-          minutes,
-          percent: totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0
-        }))
-        .sort((a, b) => b.minutes - a.minutes);
+      const subjects = (data || []).map(row => ({
+        name: row.subject || "未分类",
+        minutes: Number(row.minutes || 0),
+        percent: Number(row.percent || 0)
+      }));
+      const totalMinutes = subjects.reduce((sum, subject) => sum + subject.minutes, 0);
 
       return { success: true, subjects, totalMinutes };
     } catch (err) {

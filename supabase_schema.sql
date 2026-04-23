@@ -177,6 +177,59 @@ create policy "Users can delete own timer sessions"
   on timer_sessions for delete
   using (auth.uid() = user_id);
 
+create or replace function public.get_user_subject_breakdown(
+  target_user_id uuid,
+  rank_type text default 'daily'
+)
+returns table (
+  subject text,
+  minutes integer,
+  percent numeric
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with filtered_sessions as (
+    select
+      coalesce(s.subject, '未分类') as subject,
+      s.duration_minutes
+    from study_sessions s
+    where s.user_id = target_user_id
+      and (
+        rank_type <> 'daily'
+        or (
+          s.ended_at >= date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai'
+          and s.ended_at < (date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai'
+        )
+      )
+  ),
+  subject_totals as (
+    select
+      fs.subject,
+      sum(fs.duration_minutes)::integer as minutes
+    from filtered_sessions fs
+    group by fs.subject
+  ),
+  overall as (
+    select coalesce(sum(st.minutes), 0) as total_minutes
+    from subject_totals st
+  )
+  select
+    st.subject,
+    st.minutes,
+    case
+      when o.total_minutes > 0 then round((st.minutes::numeric / o.total_minutes::numeric) * 100, 2)
+      else 0
+    end as percent
+  from subject_totals st
+  cross join overall o
+  order by st.minutes desc, st.subject asc;
+$$;
+
+revoke all on function public.get_user_subject_breakdown(uuid, text) from public;
+grant execute on function public.get_user_subject_breakdown(uuid, text) to authenticated;
+
 create or replace view leaderboard as
 select
   p.id as user_id,
