@@ -654,6 +654,33 @@
       line-height:1.6;
     }
 
+    .auth-status {
+      margin-top:12px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:rgba(94,139,104,0.10);
+      color:var(--text);
+      font-size:13px;
+      line-height:1.65;
+    }
+
+    .auth-status b {
+      display:block;
+      margin-bottom:2px;
+      color:var(--ok);
+      font-size:14px;
+    }
+
+    .auth-status.error {
+      background:rgba(185,95,95,0.10);
+      color:var(--danger);
+    }
+
+    .auth-status.error b {
+      color:var(--danger);
+    }
+
     .quote {
       text-align:center;
       margin-top:18px;
@@ -1236,6 +1263,7 @@
                     <input id="signupPassword" type="password" placeholder="密码" />
                   </div>
                   <button class="btn primary" id="signupBtn" style="width:100%">注册</button>
+                  <div class="auth-status hidden" id="signupStatus" role="status" aria-live="polite"></div>
                   <div class="auth-note">注册成功后，如果没有自动登录，请先确认邮箱，再回来登录。</div>
                 </div>
               </div>

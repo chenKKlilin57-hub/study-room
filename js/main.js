@@ -109,6 +109,7 @@ const el = {
   signupEmail: $("signupEmail"),
   signupPassword: $("signupPassword"),
   signupBtn: $("signupBtn"),
+  signupStatus: $("signupStatus"),
   timer: $("timer"),
   statusText: $("statusText"),
   startBtn: $("startBtn"),
@@ -232,6 +233,20 @@ function setAppStatus(text, type = "") {
   if (type) el.appStatus.classList.add(type);
   if (!text) el.appStatus.classList.add("hidden");
   else el.appStatus.classList.remove("hidden");
+}
+
+function setSignupStatus(message, type = "ok") {
+  if (!el.signupStatus) return;
+  if (!message) {
+    el.signupStatus.innerHTML = "";
+    el.signupStatus.classList.add("hidden");
+    el.signupStatus.classList.remove("error");
+    return;
+  }
+
+  el.signupStatus.classList.remove("hidden", "error");
+  if (type === "error") el.signupStatus.classList.add("error");
+  el.signupStatus.innerHTML = message;
 }
 
 function setButtonLoading(button, loadingText, isLoading) {
@@ -425,10 +440,20 @@ async function signup() {
   const email = el.signupEmail.value.trim();
   const password = el.signupPassword.value.trim();
   
+  setSignupStatus("");
   setButtonLoading(el.signupBtn, "注册中...", true);
   const result = await auth.signup(username, email, password);
   setButtonLoading(el.signupBtn, "", false);
-  
+
+  if (result.success) {
+    setSignupStatus(
+      `<b>确认邮件已发送</b>请前往 ${esc(email)} 的邮箱，点击确认链接后再回来登录。没有看到邮件的话，也检查一下垃圾邮件或广告邮件。`
+    );
+    el.signupPassword.value = "";
+  } else {
+    setSignupStatus(`<b>注册没有完成</b>${esc(result.message)}`, "error");
+  }
+
   showMessage(result.message, result.success ? "ok" : "error");
 }
 
@@ -1415,6 +1440,7 @@ function bindTabs() {
     const tab = btn.getAttribute("data-auth-tab");
     $("loginPane").classList.toggle("hidden", tab !== "login");
     $("signupPane").classList.toggle("hidden", tab !== "signup");
+    if (tab === "signup") setSignupStatus("");
   }));
   
   document.querySelectorAll("[data-side-tab]").forEach(btn => btn.addEventListener("click", () => {
@@ -1463,6 +1489,9 @@ function bindCommon() {
   el.editUsernameBtn?.addEventListener("click", openUsernameDrawer);
   el.loginBtn.addEventListener("click", login);
   el.signupBtn.addEventListener("click", signup);
+  [el.signupUsername, el.signupEmail, el.signupPassword].forEach(input => {
+    input?.addEventListener("input", () => setSignupStatus(""));
+  });
 
   el.closeUsernameDrawerBtn?.addEventListener("click", closeUsernameDrawer);
   el.usernameDrawerOverlay?.addEventListener("click", closeUsernameDrawer);
