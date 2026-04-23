@@ -24,7 +24,7 @@ export class Auth {
   }
 
   // 注册
-  async signup(username, email, password) {
+  async signup(username, email, password, emailRedirectTo = "") {
     if (this.authLoading) return { success: false, message: "请稍候..." };
     if (!username || !email || !password) {
       return { success: false, message: "请填完整信息。" };
@@ -32,10 +32,13 @@ export class Auth {
 
     this.authLoading = true;
     try {
+      const options = { data: { username } };
+      if (emailRedirectTo) options.emailRedirectTo = emailRedirectTo;
+
       const { data, error } = await this.supabase.auth.signUp({
         email,
         password,
-        options: { data: { username } }
+        options
       });
 
       if (error) throw error;
@@ -47,7 +50,19 @@ export class Auth {
         });
       }
 
-      return { success: true, message: "注册成功。请去邮箱确认。" };
+      if (data.session) {
+        return { success: true, message: "注册成功，已自动登录。", needsEmailConfirm: false };
+      }
+
+      const identities = data.user && Array.isArray(data.user.identities) ? data.user.identities : null;
+      if (identities && identities.length === 0) {
+        return {
+          success: false,
+          message: "这个邮箱可能已经注册过。请直接登录，或换一个邮箱注册。"
+        };
+      }
+
+      return { success: true, message: "确认邮件已发送，请去邮箱确认。", needsEmailConfirm: true };
     } catch (err) {
       return { success: false, message: "注册失败：" + err.message };
     } finally {

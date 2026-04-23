@@ -474,17 +474,22 @@ async function signup() {
   const username = el.signupUsername.value.trim();
   const email = el.signupEmail.value.trim();
   const password = el.signupPassword.value.trim();
+  const redirectTo = new URL("app.html", window.location.href).href;
   
   setSignupStatus("");
   setButtonLoading(el.signupBtn, "注册中...", true);
-  const result = await auth.signup(username, email, password);
+  const result = await auth.signup(username, email, password, redirectTo);
   setButtonLoading(el.signupBtn, "", false);
 
-  if (result.success) {
+  if (result.success && result.needsEmailConfirm) {
     setSignupStatus(
       `<b>确认邮件已发送</b>请前往 ${esc(email)} 的邮箱，点击确认链接后再回来登录。没有看到邮件的话，也检查一下垃圾邮件或广告邮件。`
     );
     el.signupPassword.value = "";
+  } else if (result.success) {
+    setSignupStatus(`<b>注册成功</b>当前项目不需要邮箱确认，已经可以直接使用。`);
+    el.signupPassword.value = "";
+    await refreshSession();
   } else {
     setSignupStatus(`<b>注册没有完成</b>${esc(result.message)}`, "error");
   }
