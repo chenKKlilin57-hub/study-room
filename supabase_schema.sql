@@ -199,10 +199,10 @@ from profiles p
 join auth.users u on u.id = p.id
 left join study_sessions s
   on s.user_id = p.id
-  and s.created_at >= date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai'
+  and s.ended_at >= date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai'
+  and s.ended_at < (date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai'
 group by p.id, p.username, u.email
 order by total_minutes desc;
 
 grant select on leaderboard to authenticated;
 grant select on daily_leaderboard to authenticated;
-

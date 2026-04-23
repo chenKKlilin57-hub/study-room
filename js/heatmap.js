@@ -45,14 +45,24 @@ export class Heatmap {
     }
 
     try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - Math.max(this.currentRange + 14, 45));
+      const offsetMs = 8 * 60 * 60 * 1000;
+      const lookbackDays = Math.max(this.currentRange + 14, 45);
+      const bj = new Date(Date.now() + offsetMs);
+      const startUtcMs = Date.UTC(
+        bj.getUTCFullYear(),
+        bj.getUTCMonth(),
+        bj.getUTCDate() - (lookbackDays - 1),
+        0,
+        0,
+        0
+      ) - offsetMs;
+      const startISO = new Date(startUtcMs).toISOString();
 
       let query = this.supabase
         .from("study_sessions")
-        .select("duration_minutes, created_at, subject")
+        .select("duration_minutes, ended_at, subject")
         .eq("user_id", currentUser.id)
-        .gte("created_at", startDate.toISOString());
+        .gte("ended_at", startISO);
 
       if (this.currentSubjectFilter !== "全部") {
         query = query.eq("subject", this.currentSubjectFilter);
@@ -64,7 +74,8 @@ export class Heatmap {
       this.heatmapDataMap.clear();
 
       (data || []).forEach(session => {
-        const dateStr = getLocalDateISO(new Date(session.created_at));
+        if (!session.ended_at) return;
+        const dateStr = getLocalDateISO(new Date(session.ended_at));
         const mins = Number(session.duration_minutes || 0);
         this.heatmapDataMap.set(dateStr, (this.heatmapDataMap.get(dateStr) || 0) + mins);
       });

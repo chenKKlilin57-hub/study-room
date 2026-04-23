@@ -18,14 +18,48 @@ export class Timer {
     this.startCancelled = false;
   }
 
+  getBeijingDayBounds(date = new Date()) {
+    const offsetMs = 8 * 60 * 60 * 1000;
+    const bj = new Date(date.getTime() + offsetMs);
+    const year = bj.getUTCFullYear();
+    const month = bj.getUTCMonth();
+    const day = bj.getUTCDate();
+    const startUtcMs = Date.UTC(year, month, day, 0, 0, 0) - offsetMs;
+    const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000;
+
+    return {
+      startISO: new Date(startUtcMs).toISOString(),
+      endISO: new Date(endUtcMs).toISOString()
+    };
+  }
+
+  getBeijingRollingStartISO(days) {
+    const offsetMs = 8 * 60 * 60 * 1000;
+    const bj = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      bj.getUTCFullYear(),
+      bj.getUTCMonth(),
+      bj.getUTCDate() - Math.max(0, days - 1),
+      0,
+      0,
+      0
+    ) - offsetMs;
+
+    return new Date(startUtcMs).toISOString();
+  }
+
   // 保存计时状态到数据库
   async saveTimerState() {
     const user = this.auth.getCurrentUser();
     if (!user) return;
 
+    const startedAtISO = this.startedAt
+      ? new Date(this.startedAt).toISOString()
+      : new Date().toISOString();
+
     const state = {
       user_id: user.id,
-      started_at: new Date().toISOString(),
+      started_at: startedAtISO,
       duration: this.selectedDuration,
       remaining: this.remaining,
       timer_mode: this.timerMode,
@@ -74,7 +108,11 @@ export class Timer {
     const now = Date.now();
     if (now - updatedAt > 24 * 60 * 60 * 1000) {
       // 超过24小时，清除旧会话
-      await this.clearTimerState();
+      await this.supabase
+        .from("timer_sessions")
+        .delete()
+        .eq("id", data.id)
+        .eq("user_id", user.id);
       return null;
     }
 
@@ -325,18 +363,18 @@ export class Timer {
     }
 
     try {
-      const todayISO = getLocalDateISO();
-      const todayLocalStart = new Date(todayISO + "T00:00:00").toISOString();
+      const { startISO, endISO } = this.getBeijingDayBounds();
 
       const [todayRes, totalRes] = await Promise.all([
         this.supabase
           .from("study_sessions")
           .select("duration_minutes")
           .eq("user_id", currentUser.id)
-          .gte("created_at", todayLocalStart),
+          .gte("ended_at", startISO)
+          .lt("ended_at", endISO),
         this.supabase
           .from("study_sessions")
-          .select("duration_minutes, created_at", { count: "exact" })
+          .select("duration_minutes, ended_at", { count: "exact" })
           .eq("user_id", currentUser.id)
       ]);
 
@@ -366,26 +404,23 @@ export class Timer {
     }
 
     try {
-      const now = new Date();
       let startDate = null;
 
       if (range === "today") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startDate = this.getBeijingRollingStartISO(1);
       } else if (range === "week") {
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 7);
+        startDate = this.getBeijingRollingStartISO(7);
       } else if (range === "month") {
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 30);
+        startDate = this.getBeijingRollingStartISO(30);
       }
 
       let query = this.supabase
         .from("study_sessions")
-        .select("duration_minutes, subject")
+        .select("duration_minutes, subject, ended_at")
         .eq("user_id", currentUser.id);
 
       if (startDate) {
-        query = query.gte("created_at", startDate.toISOString());
+        query = query.gte("ended_at", startDate);
       }
 
       const { data, error } = await query;
@@ -424,13 +459,12 @@ export class Timer {
     try {
       let query = this.supabase
         .from("study_sessions")
-        .select("duration_minutes, subject, created_at")
+        .select("duration_minutes, subject, ended_at")
         .eq("user_id", userId);
 
       if (rankType === "daily") {
-        const now = new Date();
-        const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        query = query.gte("created_at", startDate.toISOString());
+        const { startISO, endISO } = this.getBeijingDayBounds();
+        query = query.gte("ended_at", startISO).lt("ended_at", endISO);
       }
 
       const { data, error } = await query;
@@ -485,9 +519,9 @@ export class Timer {
     try {
       const { data, error } = await this.supabase
         .from("study_sessions")
-        .select("duration_minutes, created_at, subject")
+        .select("duration_minutes, ended_at, subject")
         .eq("user_id", currentUser.id)
-        .order("created_at", { ascending: false })
+        .order("ended_at", { ascending: false })
         .limit(50);
 
       if (error) throw error;

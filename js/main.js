@@ -916,7 +916,8 @@ async function loadHistory() {
   result.data.forEach(row => {
     const div = document.createElement("div");
     div.className = "item";
-    div.innerHTML = `<div class="main"><div>${new Date(row.created_at).toLocaleString("zh-CN")}</div><div class="small muted">${formatMinutes(Number(row.duration_minutes || 0))}</div></div>`;
+    const displayTime = row.ended_at || row.created_at;
+    div.innerHTML = `<div class="main"><div>${new Date(displayTime).toLocaleString("zh-CN")}</div><div class="small muted">${formatMinutes(Number(row.duration_minutes || 0))}</div></div>`;
     el.historyList.appendChild(div);
   });
 }
