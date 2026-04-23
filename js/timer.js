@@ -457,10 +457,12 @@ export class Timer {
     }
 
     try {
-      const { data, error } = await this.supabase.rpc("get_user_subject_breakdown", {
-        target_user_id: userId,
-        rank_type: rankType
-      });
+      const viewName = rankType === "daily" ? "daily_subject_breakdown" : "subject_breakdown";
+      const { data, error } = await this.supabase
+        .from(viewName)
+        .select("subject, minutes, percent")
+        .eq("user_id", userId)
+        .order("minutes", { ascending: false });
       if (error) throw error;
 
       const subjects = (data || []).map(row => ({

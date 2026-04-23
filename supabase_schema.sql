@@ -230,6 +230,62 @@ $$;
 revoke all on function public.get_user_subject_breakdown(uuid, text) from public;
 grant execute on function public.get_user_subject_breakdown(uuid, text) to authenticated;
 
+create or replace view subject_breakdown as
+with subject_totals as (
+  select
+    s.user_id,
+    coalesce(s.subject, '未分类') as subject,
+    sum(s.duration_minutes)::integer as minutes
+  from study_sessions s
+  group by s.user_id, coalesce(s.subject, '未分类')
+),
+user_totals as (
+  select
+    st.user_id,
+    sum(st.minutes)::integer as total_minutes
+  from subject_totals st
+  group by st.user_id
+)
+select
+  st.user_id,
+  st.subject,
+  st.minutes,
+  case
+    when ut.total_minutes > 0 then round((st.minutes::numeric / ut.total_minutes::numeric) * 100, 2)
+    else 0
+  end as percent
+from subject_totals st
+join user_totals ut on ut.user_id = st.user_id;
+
+create or replace view daily_subject_breakdown as
+with subject_totals as (
+  select
+    s.user_id,
+    coalesce(s.subject, '未分类') as subject,
+    sum(s.duration_minutes)::integer as minutes
+  from study_sessions s
+  where s.ended_at >= date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai'
+    and s.ended_at < (date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai'
+  group by s.user_id, coalesce(s.subject, '未分类')
+),
+user_totals as (
+  select
+    st.user_id,
+    sum(st.minutes)::integer as total_minutes
+  from subject_totals st
+  group by st.user_id
+)
+select
+  st.user_id,
+  st.subject,
+  st.minutes,
+  case
+    when ut.total_minutes > 0 then round((st.minutes::numeric / ut.total_minutes::numeric) * 100, 2)
+    else 0
+  end as percent
+from subject_totals st
+join user_totals ut on ut.user_id = st.user_id;
+
 create or replace view leaderboard as
 select
   p.id as user_id,
@@ -259,3 +315,5 @@ order by total_minutes desc;
 
 grant select on leaderboard to authenticated;
 grant select on daily_leaderboard to authenticated;
+grant select on subject_breakdown to authenticated;
+grant select on daily_subject_breakdown to authenticated;
