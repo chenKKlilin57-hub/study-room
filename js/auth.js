@@ -233,16 +233,9 @@ export class Auth {
     }
   }
 
-  async checkin(todayMinutes, getLocalDateISO) {
+  async checkin(_todayMinutes, getLocalDateISO) {
     if (!this.currentUser || this.authLoading) {
       return { success: false, message: "请先登录" };
-    }
-
-    if (todayMinutes < 30) {
-      return {
-        success: false,
-        message: `今日专注（${todayMinutes}m）未达 30 分钟门槛，无法签到。先去完成一个番茄钟吧！`
-      };
     }
 
     this.authLoading = true;

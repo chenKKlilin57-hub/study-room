@@ -1,6 +1,6 @@
 // 主应用入口文件
 import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
-import { Auth } from './auth.js?v=2';
+import { Auth } from './auth.js?v=3';
 import { Timer } from './timer.js?v=6';
 import { TaskManager } from './tasks.js?v=2';
 import { Heatmap } from './heatmap.js?v=2';
