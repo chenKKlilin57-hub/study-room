@@ -131,14 +131,15 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-    const model = Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini";
+    const aiApiKey = Deno.env.get("XAI_API_KEY") || Deno.env.get("OPENAI_API_KEY");
+    const baseUrl = Deno.env.get("XAI_BASE_URL") || "https://api-xai.ainaibahub.com";
+    const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("XAI_MODEL") || "gpt-5.5";
 
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error("Supabase environment variables are missing.");
     }
-    if (!openaiApiKey) {
-      throw new Error("OPENAI_API_KEY is missing.");
+    if (!aiApiKey) {
+      throw new Error("XAI_API_KEY is missing.");
     }
 
     const authHeader = req.headers.get("Authorization") || "";
@@ -158,10 +159,10 @@ Deno.serve(async (req) => {
     const payload = await req.json().catch(() => ({}));
     const prompt = buildPrompt(payload);
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", {
+    const aiResponse = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${openaiApiKey}`,
+        "Authorization": `Bearer ${aiApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -172,13 +173,13 @@ Deno.serve(async (req) => {
       }),
     });
 
-    if (!openaiResponse.ok) {
-      const detail = await openaiResponse.text();
-      throw new Error(`OpenAI request failed: ${openaiResponse.status} ${detail}`);
+    if (!aiResponse.ok) {
+      const detail = await aiResponse.text();
+      throw new Error(`AI request failed: ${aiResponse.status} ${detail}`);
     }
 
-    const openaiData = await openaiResponse.json();
-    const outputText = extractResponsesText(openaiData);
+    const aiData = await aiResponse.json();
+    const outputText = extractResponsesText(aiData);
     if (!outputText) {
       throw new Error("AI did not return any text.");
     }
