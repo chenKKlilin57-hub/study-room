@@ -213,6 +213,8 @@ create policy "Users can delete own task time entries"
   on task_time_entries for delete
   using (auth.uid() = user_id);
 
+grant select, insert, update, delete on task_time_entries to authenticated;
+
 create or replace view study_activity_entries as
 select
   ('session-' || s.id::text) as activity_id,
