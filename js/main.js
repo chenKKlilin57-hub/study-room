@@ -1162,6 +1162,7 @@ async function addSubtask(text, dateStr, durationMinutes, priority, parentId) {
 }
 
 async function changeTaskDate(days) {
+  if (reviewSaveTimer) { clearTimeout(reviewSaveTimer); reviewSaveTimer = null; }
   await autoSaveReview();
   const d = new Date(selectedTaskDate + "T00:00:00");
   d.setDate(d.getDate() + days);

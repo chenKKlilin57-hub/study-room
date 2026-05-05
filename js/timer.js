@@ -16,6 +16,7 @@ export class Timer {
     this.activeSessionId = null; // 当前活动的计时会话ID
     this.starting = false;
     this.startCancelled = false;
+    this._lastStateSave = 0;
   }
 
   getBeijingDayBounds(date = new Date()) {
@@ -253,7 +254,11 @@ export class Timer {
       return false;
     }
 
-    this.timer = setInterval(async () => {
+    this._lastStateSave = Date.now();
+
+    const tick = async () => {
+      if (!this.timer) return;
+
       this.syncWithClock();
 
       if (this.isFreeMode) {
@@ -267,14 +272,23 @@ export class Timer {
           if (onComplete) await onComplete(minutes);
           await this.clearTimerState();
           await this.reset(true);
+          return;
         }
       }
 
       // 每10秒更新一次数据库状态
-      if ((this.isFreeMode ? this.elapsedInFreeMode : this.selectedDuration - this.remaining) % 10 === 0) {
+      const now = Date.now();
+      if (now - this._lastStateSave >= 10000) {
+        this._lastStateSave = now;
         await this.saveTimerState();
       }
-    }, 1000);
+
+      if (this.timer) {
+        this.timer = setTimeout(tick, 1000);
+      }
+    };
+
+    this.timer = setTimeout(tick, 1000);
 
     this.starting = false;
     return true;
@@ -291,7 +305,7 @@ export class Timer {
 
     if (this.timer) {
       this.syncWithClock();
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
       // 暂停时清除数据库状态
       await this.clearTimerState();
@@ -309,7 +323,7 @@ export class Timer {
 
     if (this.timer) {
       this.syncWithClock();
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
   }
@@ -440,6 +454,8 @@ export class Timer {
         startISO = this.getBeijingRollingStartISO(7);
       } else if (range === "month") {
         startISO = this.getBeijingRollingStartISO(30);
+      } else if (range === "all") {
+        startISO = this.getBeijingRollingStartISO(90);
       }
 
       if (startISO) {
