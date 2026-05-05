@@ -233,13 +233,15 @@ select
   ('task-' || t.id::text) as activity_id,
   t.user_id,
   t.duration_minutes,
-  '任务补记'::text as subject,
+  coalesce(nullif(trim(t.text), ''), '已完成任务') as subject,
   (t.task_date::timestamp at time zone 'Asia/Shanghai') as activity_at,
-  t.created_at,
+  t.updated_at as created_at,
   'task'::text as activity_type,
-  t.task_id,
+  t.id as task_id,
   t.task_date as activity_date
-from task_time_entries t;
+from tasks t
+where t.done = true
+  and coalesce(t.duration_minutes, 0) > 0;
 
 create or replace function public.get_user_subject_breakdown(
   target_user_id uuid,
