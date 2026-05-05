@@ -214,6 +214,7 @@ create policy "Users can delete own task time entries"
   using (auth.uid() = user_id);
 
 grant select, insert, update, delete on task_time_entries to authenticated;
+grant usage, select on sequence task_time_entries_id_seq to authenticated;
 
 create or replace view study_activity_entries as
 select
