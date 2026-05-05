@@ -458,7 +458,7 @@ export class Timer {
         (() => {
           let query = this.supabase
             .from("tasks")
-            .select("duration_minutes, task_date")
+            .select("duration_minutes, task_date, text")
             .eq("user_id", currentUser.id)
             .eq("done", true);
           if (startDate) query = query.gte("task_date", startDate);
@@ -480,8 +480,9 @@ export class Timer {
       });
 
       (tasksRes.data || []).forEach(task => {
+        const label = (task.text || "").trim() || "已完成任务";
         const mins = Number(task.duration_minutes || 0);
-        subjectMap.set("任务补记", (subjectMap.get("任务补记") || 0) + mins);
+        subjectMap.set(label, (subjectMap.get(label) || 0) + mins);
         totalMinutes += mins;
       });
 
@@ -581,7 +582,7 @@ export class Timer {
         duration_minutes: row.duration_minutes,
         activity_at: row.created_at || `${row.task_date}T00:00:00+08:00`,
         activity_date: row.task_date,
-        subject: "任务补记",
+        subject: (row.text || "").trim() || "已完成任务",
         activity_type: "task"
       }));
 
