@@ -235,7 +235,7 @@ select
   t.duration_minutes,
   coalesce(nullif(trim(t.text), ''), '已完成任务') as subject,
   (t.task_date::timestamp at time zone 'Asia/Shanghai') as activity_at,
-  t.updated_at as created_at,
+  t.created_at,
   'task'::text as activity_type,
   t.id as task_id,
   t.task_date as activity_date
