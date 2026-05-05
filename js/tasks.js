@@ -86,12 +86,15 @@ export class TaskManager {
     if (!currentUser || !task) return;
 
     const minutes = Number(task.duration_minutes || 0);
+    const { error: deleteError } = await this.supabase
+      .from("task_time_entries")
+      .delete()
+      .eq("task_id", task.id)
+      .eq("user_id", currentUser.id);
+
+    if (deleteError) throw deleteError;
+
     if (!done || minutes <= 0) {
-      await this.supabase
-        .from("task_time_entries")
-        .delete()
-        .eq("task_id", task.id)
-        .eq("user_id", currentUser.id);
       return;
     }
 
@@ -99,15 +102,14 @@ export class TaskManager {
       user_id: currentUser.id,
       task_id: task.id,
       task_date: task.task_date,
-      duration_minutes: minutes,
-      updated_at: new Date().toISOString()
+      duration_minutes: minutes
     };
 
-    const { error } = await this.supabase
+    const { error: insertError } = await this.supabase
       .from("task_time_entries")
-      .upsert(payload, { onConflict: "task_id" });
+      .insert(payload);
 
-    if (error) throw error;
+    if (insertError) throw insertError;
   }
 
   // 删除任务
