@@ -1,5 +1,5 @@
 // 主应用入口文件
-import { SUPABASE_CONFIG, APP_CONFIG } from './config.js?v=2';
+import { SUPABASE_CONFIG, APP_CONFIG, AI_CONFIG } from './config.js?v=3';
 import { Auth } from './auth.js?v=3';
 import { Timer } from './timer.js?v=6';
 import { TaskManager } from './tasks.js?v=2';
@@ -29,6 +29,8 @@ let currentTodayMinutes = 0;
 let undoTimer = null;
 let pendingTaskDelete = null; // { taskId }
 let lastLinkedTaskId = null;
+let reviewAiDraft = null;
+let reviewAiBusy = false;
 
 // DOM 元素选择器
 const $ = (id) => document.getElementById(id);
@@ -189,6 +191,11 @@ const el = {
   checkinStatus: $("checkinStatus"),
   streakDays: $("streakDays"),
   checkinBtn: $("checkinBtn"),
+  reviewAiBtn: $("reviewAiBtn"),
+  reviewAiStatus: $("reviewAiStatus"),
+  reviewAiResult: $("reviewAiResult"),
+  reviewAiPreview: $("reviewAiPreview"),
+  applyReviewAiBtn: $("applyReviewAiBtn"),
   openHeatmapBtn: $("openHeatmapBtn"),
   backToMainBtn: $("backToMainBtn"),
   refreshHeatmapBtn: $("refreshHeatmapBtn"),
@@ -249,6 +256,7 @@ function updateAuthUI() {
     if (el.heatmapSubtitle) {
       el.heatmapSubtitle.textContent = "颜色越深，代表当天专注时间越长";
     }
+    resetReviewAiPanel();
     showMainPage();
   }
 }
@@ -1137,6 +1145,7 @@ async function loadReview(date) {
     reviewInput.innerHTML = storageGet("review_" + date) || "";
   }
   reviewDirty = false;
+  resetReviewAiPanel();
   setReviewSaveStatus("自动保存");
 }
 
@@ -1179,6 +1188,208 @@ function insertReviewChecklist() {
     '<div><input type="checkbox"></div>'
   );
   scheduleReviewAutoSave();
+}
+
+function setReviewAiStatus(message = "", type = "") {
+  if (!el.reviewAiStatus) return;
+  el.reviewAiStatus.textContent = message || "";
+  el.reviewAiStatus.style.color = type === "error"
+    ? "var(--danger)"
+    : type === "ok"
+      ? "var(--ok)"
+      : "var(--muted)";
+}
+
+function resetReviewAiPanel() {
+  reviewAiDraft = null;
+  if (el.reviewAiPreview) el.reviewAiPreview.innerHTML = "";
+  if (el.reviewAiResult) el.reviewAiResult.style.display = "none";
+  setReviewAiStatus("");
+}
+
+function collectReviewContext() {
+  const reviewInput = document.getElementById("reviewInput");
+  const reviewText = reviewInput ? reviewInput.innerText.trim() : "";
+  const tasks = taskManager.getCurrentTasks().filter(task => !task.parent_id).slice(0, 12).map(task => ({
+    text: task.text,
+    done: Boolean(task.done),
+    durationMinutes: Number(task.duration_minutes || 0),
+    priority: task.priority || "medium"
+  }));
+
+  return {
+    date: selectedTaskDate || getLocalDateISO(),
+    displayName: getDisplayName(),
+    todayMinutes: currentTodayMinutes,
+    dailyGoal,
+    taskStats: taskManager.getTaskStats(),
+    tasks,
+    reviewText
+  };
+}
+
+function normalizeReviewAiDraft(rawDraft) {
+  const draft = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
+  const toList = (value) => {
+    if (Array.isArray(value)) return value.map(item => String(item || "").trim()).filter(Boolean);
+    if (typeof value === "string") {
+      return value
+        .split(/\n+/)
+        .map(item => item.replace(/^[-*•\d.\s]+/, "").trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  return {
+    title: String(draft.title || "今日复盘").trim().slice(0, 24),
+    summary: String(draft.summary || "").trim(),
+    highlights: toList(draft.highlights),
+    issues: toList(draft.issues),
+    nextSteps: toList(draft.nextSteps || draft.next_steps),
+    mood: String(draft.mood || "").trim()
+  };
+}
+
+function renderReviewAiPreview(draft) {
+  if (!el.reviewAiPreview || !el.reviewAiResult) return;
+
+  const sections = [];
+  if (draft.summary) {
+    sections.push(`
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">总结</div>
+        <div>${esc(draft.summary).replace(/\n/g, "<br>")}</div>
+      </div>
+    `);
+  }
+  if (draft.highlights.length) {
+    sections.push(`
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">做得不错</div>
+        <ul style="margin:0;padding-left:18px;">
+          ${draft.highlights.map(item => `<li>${esc(item)}</li>`).join("")}
+        </ul>
+      </div>
+    `);
+  }
+  if (draft.issues.length) {
+    sections.push(`
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">卡点</div>
+        <ul style="margin:0;padding-left:18px;">
+          ${draft.issues.map(item => `<li>${esc(item)}</li>`).join("")}
+        </ul>
+      </div>
+    `);
+  }
+  if (draft.nextSteps.length) {
+    sections.push(`
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">明日行动</div>
+        <ul style="margin:0;padding-left:18px;">
+          ${draft.nextSteps.map(item => `<li>${esc(item)}</li>`).join("")}
+        </ul>
+      </div>
+    `);
+  }
+  if (draft.mood) {
+    sections.push(`
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">状态</div>
+        <div>${esc(draft.mood)}</div>
+      </div>
+    `);
+  }
+
+  el.reviewAiPreview.innerHTML = `
+    <div style="font-size:14px;font-weight:700;color:var(--text);">${esc(draft.title || "今日复盘")}</div>
+    ${sections.join("") || '<div style="color:var(--muted);">这次生成结果比较简短，可以再点一次 AI 整理或补充几句笔记。</div>'}
+  `;
+  el.reviewAiResult.style.display = "block";
+}
+
+function buildReviewAiHtml(draft) {
+  const blocks = [];
+  blocks.push(`<h3>${esc(draft.title || "今日复盘")}</h3>`);
+  if (draft.summary) {
+    blocks.push(`<p>${esc(draft.summary).replace(/\n/g, "<br>")}</p>`);
+  }
+  if (draft.highlights.length) {
+    blocks.push(`<h4>做得不错</h4>`);
+    blocks.push(`<ul>${draft.highlights.map(item => `<li>${esc(item)}</li>`).join("")}</ul>`);
+  }
+  if (draft.issues.length) {
+    blocks.push(`<h4>卡点</h4>`);
+    blocks.push(`<ul>${draft.issues.map(item => `<li>${esc(item)}</li>`).join("")}</ul>`);
+  }
+  if (draft.nextSteps.length) {
+    blocks.push(`<h4>明日行动</h4>`);
+    blocks.push(`<ul>${draft.nextSteps.map(item => `<li>${esc(item)}</li>`).join("")}</ul>`);
+  }
+  if (draft.mood) {
+    blocks.push(`<h4>状态</h4><p>${esc(draft.mood)}</p>`);
+  }
+  return `<div class="ai-review-draft">${blocks.join("")}</div>`;
+}
+
+async function generateReviewAiDraft() {
+  const currentUser = auth.getCurrentUser();
+  if (!currentUser) {
+    showMessage("登录后才能使用 AI 复盘整理。", "error");
+    return;
+  }
+
+  if (reviewAiBusy) return;
+
+  const reviewInput = document.getElementById("reviewInput");
+  const reviewText = reviewInput ? reviewInput.innerText.trim() : "";
+  if (!reviewText && taskManager.getCurrentTasks().length === 0 && !currentTodayMinutes) {
+    showMessage("先写几句笔记，AI 会更好整理。", "error");
+    return;
+  }
+
+  reviewAiBusy = true;
+  setButtonLoading(el.reviewAiBtn, "整理中...", true);
+  setReviewAiStatus("AI 正在整理你的笔记…");
+
+  try {
+    const payload = collectReviewContext();
+    const { data, error } = await supabase.functions.invoke(AI_CONFIG.REVIEW_SUMMARY_FUNCTION, {
+      body: payload
+    });
+
+    if (error) throw error;
+
+    const normalized = normalizeReviewAiDraft(data && data.data ? data.data : data);
+    reviewAiDraft = normalized;
+    renderReviewAiPreview(normalized);
+    setReviewAiStatus("AI 已生成结构化复盘。", "ok");
+    showMessage("AI 复盘已生成。", "ok");
+  } catch (err) {
+    console.error("generateReviewAiDraft error:", err);
+    setReviewAiStatus("AI 生成失败，请稍后再试。", "error");
+    showMessage("AI 生成失败，请稍后再试。", "error");
+  } finally {
+    reviewAiBusy = false;
+    setButtonLoading(el.reviewAiBtn, "", false);
+  }
+}
+
+function applyReviewAiDraft() {
+  if (!reviewAiDraft) {
+    showMessage("先生成一版 AI 复盘。", "error");
+    return;
+  }
+
+  const reviewInput = document.getElementById("reviewInput");
+  if (!reviewInput) return;
+
+  reviewInput.innerHTML = buildReviewAiHtml(reviewAiDraft);
+  reviewDirty = true;
+  scheduleReviewAutoSave();
+  setReviewAiStatus("已写回笔记，可继续手动调整。", "ok");
+  showMessage("结构化复盘已写回笔记。", "ok");
 }
 
 function openEditDrawer(task) {
@@ -1864,6 +2075,8 @@ function bindCommon() {
   }
   const reviewChecklistBtn = document.getElementById("reviewChecklistBtn");
   if (reviewChecklistBtn) reviewChecklistBtn.addEventListener("click", insertReviewChecklist);
+  if (el.reviewAiBtn) el.reviewAiBtn.addEventListener("click", generateReviewAiDraft);
+  if (el.applyReviewAiBtn) el.applyReviewAiBtn.addEventListener("click", applyReviewAiDraft);
   const reviewInput = document.getElementById("reviewInput");
   if (reviewInput) {
     reviewInput.addEventListener("input", scheduleReviewAutoSave);

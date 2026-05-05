@@ -1447,10 +1447,19 @@
                 <div id="reviewToolbar" style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
                   <button type="button" onclick="document.execCommand('bold')" style="padding:4px 10px;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;" title="加粗">B</button>
                   <button type="button" id="reviewChecklistBtn" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;" title="检查清单">☑</button>
+                  <button type="button" id="reviewAiBtn" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;" title="AI整理复盘">AI整理</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#c0392b')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#c0392b;cursor:pointer;font-weight:600;" title="红色">A</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#2471a3')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#2471a3;cursor:pointer;font-weight:600;" title="蓝色">A</button>
                   <button type="button" onclick="document.execCommand('foreColor',false,'#2c2724')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;" title="黑色">A</button>
                   <button type="button" onclick="document.execCommand('removeFormat')" style="padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--muted);cursor:pointer;" title="清除格式">✕</button>
+                </div>
+                <div id="reviewAiStatus" style="margin-bottom:8px;font-size:12px;color:var(--muted);"></div>
+                <div id="reviewAiResult" style="display:none;margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
+                    <strong style="font-size:13px;">AI 结构化复盘</strong>
+                    <button type="button" id="applyReviewAiBtn" class="btn ghost" style="padding:5px 10px;font-size:12px;">写回笔记</button>
+                  </div>
+                  <div id="reviewAiPreview" style="display:grid;gap:10px;font-size:13px;line-height:1.7;"></div>
                 </div>
                 <div id="reviewInput" contenteditable="true" data-placeholder="今天学了什么？有什么收获或问题？" style="width:100%;min-height:160px;padding:12px;font-size:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);font-family:inherit;line-height:1.8;outline:none;box-sizing:border-box;overflow-y:auto;white-space:pre-wrap;word-break:break-word;"></div>
               </div>
@@ -1547,7 +1556,7 @@
   </div>
 
   <script src="./js/supabase-js.umd.js?v=1"></script>
-  <script type="module" src="./js/main.js?v=12"></script>
+  <script type="module" src="./js/main.js?v=13"></script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>

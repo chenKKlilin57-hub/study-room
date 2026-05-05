@@ -25,3 +25,11 @@ export const APP_CONFIG = {
   // 默认专注时长（秒）
   DEFAULT_DURATION: 7200
 };
+
+export const AI_CONFIG = {
+  // Supabase Edge Function 名称
+  REVIEW_SUMMARY_FUNCTION: "review-summarize",
+
+  // 默认模型，可在函数端覆盖
+  REVIEW_SUMMARY_MODEL: "gpt-5.4-mini"
+};
