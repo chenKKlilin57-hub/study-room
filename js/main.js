@@ -196,6 +196,7 @@ const el = {
   reviewAiResult: $("reviewAiResult"),
   reviewAiPreview: $("reviewAiPreview"),
   applyReviewAiBtn: $("applyReviewAiBtn"),
+  closeReviewAiBtn: $("closeReviewAiBtn"),
   openHeatmapBtn: $("openHeatmapBtn"),
   backToMainBtn: $("backToMainBtn"),
   refreshHeatmapBtn: $("refreshHeatmapBtn"),
@@ -1279,6 +1280,11 @@ function resetReviewAiPanel() {
   setReviewAiStatus("");
 }
 
+function closeReviewAiPanel() {
+  resetReviewAiPanel();
+  showMessage("AI 复盘已关闭。", "ok");
+}
+
 function collectReviewContext() {
   const reviewInput = document.getElementById("reviewInput");
   const reviewText = reviewInput ? reviewInput.innerText.trim() : "";
@@ -1460,6 +1466,7 @@ function applyReviewAiDraft() {
   reviewInput.innerHTML = buildReviewAiHtml(reviewAiDraft);
   reviewDirty = true;
   scheduleReviewAutoSave();
+  resetReviewAiPanel();
   setReviewAiStatus("已写回笔记，可继续手动调整。", "ok");
   showMessage("结构化复盘已写回笔记。", "ok");
 }
@@ -2158,6 +2165,7 @@ function bindCommon() {
   if (reviewChecklistBtn) reviewChecklistBtn.addEventListener("click", insertReviewChecklist);
   if (el.reviewAiBtn) el.reviewAiBtn.addEventListener("click", generateReviewAiDraft);
   if (el.applyReviewAiBtn) el.applyReviewAiBtn.addEventListener("click", applyReviewAiDraft);
+  if (el.closeReviewAiBtn) el.closeReviewAiBtn.addEventListener("click", closeReviewAiPanel);
   const reviewInput = document.getElementById("reviewInput");
   if (reviewInput) {
     reviewInput.addEventListener("input", scheduleReviewAutoSave);

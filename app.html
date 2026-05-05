@@ -1457,7 +1457,10 @@
                 <div id="reviewAiResult" style="display:none;margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card);">
                   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
                     <strong style="font-size:13px;">AI 结构化复盘</strong>
-                    <button type="button" id="applyReviewAiBtn" class="btn ghost" style="padding:5px 10px;font-size:12px;">写回笔记</button>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <button type="button" id="applyReviewAiBtn" class="btn ghost" style="padding:5px 10px;font-size:12px;">写回笔记</button>
+                      <button type="button" id="closeReviewAiBtn" class="btn ghost" style="padding:5px 10px;font-size:12px;">关闭</button>
+                    </div>
                   </div>
                   <div id="reviewAiPreview" style="display:grid;gap:10px;font-size:13px;line-height:1.7;"></div>
                 </div>
@@ -1556,7 +1559,7 @@
   </div>
 
   <script src="./js/supabase-js.umd.js?v=1"></script>
-  <script type="module" src="./js/main.js?v=15"></script>
+  <script type="module" src="./js/main.js?v=16"></script>
 
   <!-- 移动端任务抽屉 -->
   <div class="drawer-overlay" id="drawerOverlay"></div>
