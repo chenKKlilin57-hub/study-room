@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const aiApiKey = Deno.env.get("XAI_API_KEY") || Deno.env.get("OPENAI_API_KEY");
     const baseUrl = Deno.env.get("XAI_BASE_URL") || "https://api-xai.ainaibahub.com";
-    const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("XAI_MODEL") || "gpt-5.5";
+    const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("XAI_MODEL") || "gpt-5.4-mini";
 
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error("Supabase environment variables are missing.");
