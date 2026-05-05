@@ -59,10 +59,10 @@ export class Heatmap {
       const startISO = new Date(startUtcMs).toISOString();
 
       let query = this.supabase
-        .from("study_sessions")
-        .select("duration_minutes, ended_at, subject")
+        .from("study_activity_entries")
+        .select("duration_minutes, activity_at, subject")
         .eq("user_id", currentUser.id)
-        .gte("ended_at", startISO);
+        .gte("activity_at", startISO);
 
       if (this.currentSubjectFilter !== "全部") {
         query = query.eq("subject", this.currentSubjectFilter);
@@ -74,8 +74,8 @@ export class Heatmap {
       this.heatmapDataMap.clear();
 
       (data || []).forEach(session => {
-        if (!session.ended_at) return;
-        const dateStr = getLocalDateISO(new Date(session.ended_at));
+        if (!session.activity_at) return;
+        const dateStr = getLocalDateISO(new Date(session.activity_at));
         const mins = Number(session.duration_minutes || 0);
         this.heatmapDataMap.set(dateStr, (this.heatmapDataMap.get(dateStr) || 0) + mins);
       });
@@ -156,7 +156,7 @@ export class Heatmap {
 
     try {
       const { data, error } = await this.supabase
-        .from("study_sessions")
+        .from("study_activity_entries")
         .select("subject")
         .eq("user_id", currentUser.id)
         .not("subject", "is", null);

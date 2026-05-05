@@ -81,6 +81,35 @@ export class TaskManager {
     }
   }
 
+  async syncTaskTimeEntry(task, done) {
+    const currentUser = this.auth.getCurrentUser();
+    if (!currentUser || !task) return;
+
+    const minutes = Number(task.duration_minutes || 0);
+    if (!done || minutes <= 0) {
+      await this.supabase
+        .from("task_time_entries")
+        .delete()
+        .eq("task_id", task.id)
+        .eq("user_id", currentUser.id);
+      return;
+    }
+
+    const payload = {
+      user_id: currentUser.id,
+      task_id: task.id,
+      task_date: task.task_date,
+      duration_minutes: minutes,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await this.supabase
+      .from("task_time_entries")
+      .upsert(payload, { onConflict: "task_id" });
+
+    if (error) throw error;
+  }
+
   // 删除任务
   async deleteTask(taskId) {
     const currentUser = this.auth.getCurrentUser();
@@ -184,11 +213,12 @@ export class TaskManager {
     }
 
     try {
-      const { data: task } = await this.supabase
+      const { data: task, error: taskError } = await this.supabase
         .from("tasks")
-        .select("parent_id")
+        .select("parent_id, task_date, duration_minutes, done, user_id")
         .eq("id", taskId)
         .single();
+      if (taskError) throw taskError;
 
       const { error } = await this.supabase
         .from("tasks")
@@ -197,6 +227,17 @@ export class TaskManager {
         .eq("user_id", currentUser.id);
 
       if (error) throw error;
+
+      try {
+        await this.syncTaskTimeEntry({ ...task, id: taskId }, done);
+      } catch (syncErr) {
+        await this.supabase
+          .from("tasks")
+          .update({ done: task.done })
+          .eq("id", taskId)
+          .eq("user_id", currentUser.id);
+        throw syncErr;
+      }
 
       if (task && task.parent_id) {
         await this.updateParentProgress(task.parent_id);
@@ -214,15 +255,25 @@ export class TaskManager {
   async editTask(taskId, text, durationMinutes, priority) {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser) return { success: false, message: "请先登录。" };
+    if (!durationMinutes || durationMinutes <= 0) {
+      return { success: false, message: "请输入有效时长。" };
+    }
 
     try {
-      const { error } = await this.supabase
+      const { data: updatedTask, error } = await this.supabase
         .from("tasks")
         .update({ text, duration_minutes: durationMinutes, priority })
         .eq("id", taskId)
-        .eq("user_id", currentUser.id);
+        .eq("user_id", currentUser.id)
+        .select("id, task_date, duration_minutes, done")
+        .single();
 
       if (error) throw error;
+
+      if (updatedTask && updatedTask.done) {
+        await this.syncTaskTimeEntry(updatedTask, true);
+      }
+
       await this.loadTasksByDate(this.selectedTaskDate);
       return { success: true };
     } catch (err) {

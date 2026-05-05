@@ -367,14 +367,14 @@ export class Timer {
 
       const [todayRes, totalRes] = await Promise.all([
         this.supabase
-          .from("study_sessions")
+          .from("study_activity_entries")
           .select("duration_minutes")
           .eq("user_id", currentUser.id)
-          .gte("ended_at", startISO)
-          .lt("ended_at", endISO),
+          .gte("activity_at", startISO)
+          .lt("activity_at", endISO),
         this.supabase
-          .from("study_sessions")
-          .select("duration_minutes, ended_at", { count: "exact" })
+          .from("study_activity_entries")
+          .select("duration_minutes, activity_at", { count: "exact" })
           .eq("user_id", currentUser.id)
       ]);
 
@@ -414,13 +414,13 @@ export class Timer {
         startDate = this.getBeijingRollingStartISO(30);
       }
 
-      let query = this.supabase
-        .from("study_sessions")
-        .select("duration_minutes, subject, ended_at")
+        let query = this.supabase
+        .from("study_activity_entries")
+        .select("duration_minutes, subject, activity_at")
         .eq("user_id", currentUser.id);
 
       if (startDate) {
-        query = query.gte("ended_at", startDate);
+        query = query.gte("activity_at", startDate);
       }
 
       const { data, error } = await query;
@@ -501,11 +501,11 @@ export class Timer {
     }
 
     try {
-      const { data, error } = await this.supabase
-        .from("study_sessions")
-        .select("duration_minutes, ended_at, subject")
+        const { data, error } = await this.supabase
+        .from("study_activity_entries")
+        .select("duration_minutes, activity_at, activity_date, subject, activity_type")
         .eq("user_id", currentUser.id)
-        .order("ended_at", { ascending: false })
+        .order("activity_at", { ascending: false })
         .limit(50);
 
       if (error) throw error;

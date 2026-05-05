@@ -681,6 +681,11 @@ async function loadSubjectStats(range = "today") {
   }
 }
 
+function getActiveSubjectRange() {
+  const active = document.querySelector("[data-range].active");
+  return active ? (active.getAttribute("data-range") || "today") : "today";
+}
+
 function renderSubjectStats(subjects) {
   const container = document.getElementById("subjectStatsList");
   if (!container) return;
@@ -746,19 +751,19 @@ async function loadWeeklyChart() {
 
   try {
     const { data, error } = await supabase
-      .from("study_sessions")
-      .select("ended_at, duration_minutes")
+      .from("study_activity_entries")
+      .select("activity_at, duration_minutes")
       .eq("user_id", user.id)
-      .gte("ended_at", startISO)
-      .lte("ended_at", endISO);
+      .gte("activity_at", startISO)
+      .lte("activity_at", endISO);
 
     if (error) throw error;
 
     const minutesByDay = {};
     days.forEach(d => { minutesByDay[d] = 0; });
     (data || []).forEach(row => {
-      if (!row.ended_at) return;
-      const bjDate = getBeijingDate(new Date(row.ended_at));
+      if (!row.activity_at) return;
+      const bjDate = getBeijingDate(new Date(row.activity_at));
       const dayKey = `${bjDate.getUTCFullYear()}-${String(bjDate.getUTCMonth()+1).padStart(2,"0")}-${String(bjDate.getUTCDate()).padStart(2,"0")}`;
       if (minutesByDay[dayKey] !== undefined) {
         minutesByDay[dayKey] += row.duration_minutes || 0;
@@ -919,15 +924,23 @@ async function loadHistory() {
   el.historyList.innerHTML = "";
   
   if (!result.success || !result.data.length) {
-    el.historyList.innerHTML = '<div class="item"><div class="main muted">还没有学习记录。快去完成一次专注吧！</div></div>';
+    el.historyList.innerHTML = '<div class="item"><div class="main muted">还没有学习记录。快去完成一次专注或勾选任务吧！</div></div>';
     return;
   }
   
   result.data.forEach(row => {
     const div = document.createElement("div");
     div.className = "item";
-    const displayTime = row.ended_at || row.created_at;
-    div.innerHTML = `<div class="main"><div>${new Date(displayTime).toLocaleString("zh-CN")}</div><div class="small muted">${formatMinutes(Number(row.duration_minutes || 0))}</div></div>`;
+    const displayTime = row.activity_type === "task" && row.activity_date
+      ? row.activity_date
+      : (row.activity_at || row.ended_at || row.created_at);
+    const sourceLabel = row.activity_type === "task"
+      ? "任务补记"
+      : (row.subject || "专注记录");
+    const displayTimeText = row.activity_type === "task"
+      ? displayTime
+      : new Date(displayTime).toLocaleString("zh-CN");
+    div.innerHTML = `<div class="main"><div>${displayTimeText}</div><div class="small muted">${sourceLabel} · ${formatMinutes(Number(row.duration_minutes || 0))}</div></div>`;
     el.historyList.appendChild(div);
   });
 }
@@ -950,8 +963,22 @@ async function addTask(text, dateStr, durationMinutes, priority) {
 }
 
 async function toggleTaskDone(taskId, done) {
-  await taskManager.toggleTaskDone(taskId, done);
+  const result = await taskManager.toggleTaskDone(taskId, done);
+  if (!result.success) {
+    showMessage(result.message || "更新任务失败，请稍后重试。", "error");
+    await loadTasksByDate(selectedTaskDate);
+    return;
+  }
   await loadTasksByDate(selectedTaskDate);
+  await Promise.all([
+    loadMyStats(),
+    loadLeaderboard(),
+    loadWeeklyChart(),
+    loadSubjectStats(getActiveSubjectRange())
+  ]);
+  if (!el.heatmapPage.classList.contains("hidden-page")) {
+    await renderHeatmap();
+  }
 }
 
 async function deleteTask(taskId) {
@@ -968,6 +995,16 @@ async function deleteTask(taskId) {
   // 乐观移除
   taskManager.removeTaskLocally(taskId);
   renderTasks();
+  Promise.all([
+    loadMyStats(),
+    loadLeaderboard(),
+    loadWeeklyChart(),
+    loadSubjectStats(getActiveSubjectRange())
+  ]).then(async () => {
+    if (!el.heatmapPage.classList.contains("hidden-page")) {
+      await renderHeatmap();
+    }
+  });
 
   // 显示 undo toast
   const toast = document.getElementById("undoToast");
@@ -987,7 +1024,17 @@ async function deleteTask(taskId) {
     undoTimer = null;
     pendingTaskDelete = null;
     hideUndoToast();
-    loadTasksByDate(selectedTaskDate);
+    Promise.all([
+      loadTasksByDate(selectedTaskDate),
+      loadMyStats(),
+      loadLeaderboard(),
+      loadWeeklyChart(),
+      loadSubjectStats(getActiveSubjectRange())
+    ]).then(async () => {
+      if (!el.heatmapPage.classList.contains("hidden-page")) {
+        await renderHeatmap();
+      }
+    });
   };
 
   undoTimer = setTimeout(async () => {
@@ -996,6 +1043,15 @@ async function deleteTask(taskId) {
       pendingTaskDelete = null;
     }
     hideUndoToast();
+    await Promise.all([
+      loadMyStats(),
+      loadLeaderboard(),
+      loadWeeklyChart(),
+      loadSubjectStats(getActiveSubjectRange())
+    ]);
+    if (!el.heatmapPage.classList.contains("hidden-page")) {
+      await renderHeatmap();
+    }
   }, 5000);
 }
 
@@ -1995,6 +2051,15 @@ function bindCommon() {
     document.getElementById("editTaskDrawer").classList.remove("show");
     document.getElementById("editDrawerOverlay").classList.remove("show");
     renderTasks();
+    await Promise.all([
+      loadMyStats(),
+      loadLeaderboard(),
+      loadWeeklyChart(),
+      loadSubjectStats(getActiveSubjectRange())
+    ]);
+    if (!el.heatmapPage.classList.contains("hidden-page")) {
+      await renderHeatmap();
+    }
   });
 
   // 子任务抽屉
