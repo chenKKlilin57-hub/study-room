@@ -1,9 +1,9 @@
 // 主应用入口文件
 import { SUPABASE_CONFIG, APP_CONFIG, AI_CONFIG } from './config.js?v=3';
 import { Auth } from './auth.js?v=3';
-import { Timer } from './timer.js?v=6';
-import { TaskManager } from './tasks.js?v=2';
-import { Heatmap } from './heatmap.js?v=2';
+import { Timer } from './timer.js?v=7';
+import { TaskManager } from './tasks.js?v=3';
+import { Heatmap } from './heatmap.js?v=3';
 
 // 初始化 Supabase
 const { createClient } = window.supabase;
@@ -750,23 +750,39 @@ async function loadWeeklyChart() {
   const endISO   = new Date(new Date(days[6] + "T23:59:59Z").getTime() - BJOffset).toISOString();
 
   try {
-    const { data, error } = await supabase
-      .from("study_activity_entries")
-      .select("activity_at, duration_minutes")
-      .eq("user_id", user.id)
-      .gte("activity_at", startISO)
-      .lte("activity_at", endISO);
+    const [sessionsRes, tasksRes] = await Promise.all([
+      supabase
+        .from("study_sessions")
+        .select("ended_at, duration_minutes")
+        .eq("user_id", user.id)
+        .gte("ended_at", startISO)
+        .lte("ended_at", endISO),
+      supabase
+        .from("tasks")
+        .select("task_date, duration_minutes")
+        .eq("user_id", user.id)
+        .eq("done", true)
+        .gte("task_date", days[0])
+        .lte("task_date", days[6])
+    ]);
 
-    if (error) throw error;
+    if (sessionsRes.error) throw sessionsRes.error;
+    if (tasksRes.error) throw tasksRes.error;
 
     const minutesByDay = {};
     days.forEach(d => { minutesByDay[d] = 0; });
-    (data || []).forEach(row => {
-      if (!row.activity_at) return;
-      const bjDate = getBeijingDate(new Date(row.activity_at));
+    (sessionsRes.data || []).forEach(row => {
+      if (!row.ended_at) return;
+      const bjDate = getBeijingDate(new Date(row.ended_at));
       const dayKey = `${bjDate.getUTCFullYear()}-${String(bjDate.getUTCMonth()+1).padStart(2,"0")}-${String(bjDate.getUTCDate()).padStart(2,"0")}`;
       if (minutesByDay[dayKey] !== undefined) {
         minutesByDay[dayKey] += row.duration_minutes || 0;
+      }
+    });
+
+    (tasksRes.data || []).forEach(row => {
+      if (minutesByDay[row.task_date] !== undefined) {
+        minutesByDay[row.task_date] += row.duration_minutes || 0;
       }
     });
 

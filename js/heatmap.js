@@ -57,26 +57,49 @@ export class Heatmap {
         0
       ) - offsetMs;
       const startISO = new Date(startUtcMs).toISOString();
+      const startDate = getLocalDateISO(new Date(startUtcMs));
 
-      let query = this.supabase
-        .from("study_activity_entries")
-        .select("duration_minutes, activity_at, subject")
-        .eq("user_id", currentUser.id)
-        .gte("activity_at", startISO);
+      const [sessionsRes, tasksRes] = await Promise.all([
+        (() => {
+          let query = this.supabase
+            .from("study_sessions")
+            .select("duration_minutes, ended_at, subject")
+            .eq("user_id", currentUser.id)
+            .gte("ended_at", startISO);
+          if (this.currentSubjectFilter !== "全部" && this.currentSubjectFilter !== "任务补记") {
+            query = query.eq("subject", this.currentSubjectFilter);
+          }
+          return query;
+        })(),
+        (() => {
+          let query = this.supabase
+            .from("tasks")
+            .select("duration_minutes, task_date")
+            .eq("user_id", currentUser.id)
+            .eq("done", true)
+            .gte("task_date", startDate);
+          if (this.currentSubjectFilter !== "全部" && this.currentSubjectFilter !== "任务补记") {
+            query = query.eq("id", -1);
+          }
+          return query;
+        })()
+      ]);
 
-      if (this.currentSubjectFilter !== "全部") {
-        query = query.eq("subject", this.currentSubjectFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
+      if (sessionsRes.error) throw sessionsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
 
       this.heatmapDataMap.clear();
 
-      (data || []).forEach(session => {
-        if (!session.activity_at) return;
-        const dateStr = getLocalDateISO(new Date(session.activity_at));
+      (sessionsRes.data || []).forEach(session => {
+        if (!session.ended_at) return;
+        const dateStr = getLocalDateISO(new Date(session.ended_at));
         const mins = Number(session.duration_minutes || 0);
+        this.heatmapDataMap.set(dateStr, (this.heatmapDataMap.get(dateStr) || 0) + mins);
+      });
+
+      (tasksRes.data || []).forEach(task => {
+        const mins = Number(task.duration_minutes || 0);
+        const dateStr = task.task_date;
         this.heatmapDataMap.set(dateStr, (this.heatmapDataMap.get(dateStr) || 0) + mins);
       });
 
@@ -155,21 +178,34 @@ export class Heatmap {
     if (!currentUser) return { success: false, subjects: [] };
 
     try {
-      const { data, error } = await this.supabase
-        .from("study_activity_entries")
-        .select("subject")
-        .eq("user_id", currentUser.id)
-        .not("subject", "is", null);
+      const [sessionsRes, tasksRes] = await Promise.all([
+        this.supabase
+          .from("study_sessions")
+          .select("subject")
+          .eq("user_id", currentUser.id)
+          .not("subject", "is", null),
+        this.supabase
+          .from("tasks")
+          .select("id")
+          .eq("user_id", currentUser.id)
+          .eq("done", true)
+          .limit(1)
+      ]);
 
-      if (error) throw error;
+      if (sessionsRes.error) throw sessionsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
 
       const subjects = [
         ...new Set(
-          (data || [])
+          (sessionsRes.data || [])
             .map(s => s.subject)
             .filter(s => s && s !== "未分类")
         )
       ];
+
+      if ((tasksRes.data || []).length > 0) {
+        subjects.push("任务补记");
+      }
 
       return { success: true, subjects };
     } catch (err) {

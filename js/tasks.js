@@ -81,37 +81,6 @@ export class TaskManager {
     }
   }
 
-  async syncTaskTimeEntry(task, done) {
-    const currentUser = this.auth.getCurrentUser();
-    if (!currentUser || !task) return;
-
-    const minutes = Number(task.duration_minutes || 0);
-    const { error: deleteError } = await this.supabase
-      .from("task_time_entries")
-      .delete()
-      .eq("task_id", task.id)
-      .eq("user_id", currentUser.id);
-
-    if (deleteError) throw deleteError;
-
-    if (!done || minutes <= 0) {
-      return;
-    }
-
-    const payload = {
-      user_id: currentUser.id,
-      task_id: task.id,
-      task_date: task.task_date,
-      duration_minutes: minutes
-    };
-
-    const { error: insertError } = await this.supabase
-      .from("task_time_entries")
-      .insert(payload);
-
-    if (insertError) throw insertError;
-  }
-
   // 删除任务
   async deleteTask(taskId) {
     const currentUser = this.auth.getCurrentUser();
@@ -230,17 +199,6 @@ export class TaskManager {
 
       if (error) throw error;
 
-      try {
-        await this.syncTaskTimeEntry({ ...task, id: taskId }, done);
-      } catch (syncErr) {
-        await this.supabase
-          .from("tasks")
-          .update({ done: task.done })
-          .eq("id", taskId)
-          .eq("user_id", currentUser.id);
-        throw syncErr;
-      }
-
       if (task && task.parent_id) {
         await this.updateParentProgress(task.parent_id);
       }
@@ -271,10 +229,6 @@ export class TaskManager {
         .single();
 
       if (error) throw error;
-
-      if (updatedTask && updatedTask.done) {
-        await this.syncTaskTimeEntry(updatedTask, true);
-      }
 
       await this.loadTasksByDate(this.selectedTaskDate);
       return { success: true };

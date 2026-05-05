@@ -48,6 +48,17 @@ export class Timer {
     return new Date(startUtcMs).toISOString();
   }
 
+  getDateFromISO(isoString) {
+    if (!isoString) return "";
+    const date = new Date(isoString);
+    const offsetMs = 8 * 60 * 60 * 1000;
+    const bj = new Date(date.getTime() + offsetMs);
+    const year = bj.getUTCFullYear();
+    const month = String(bj.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(bj.getUTCDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
   // 保存计时状态到数据库
   async saveTimerState() {
     const user = this.auth.getCurrentUser();
@@ -99,7 +110,7 @@ export class Timer {
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 
@@ -363,32 +374,48 @@ export class Timer {
     }
 
     try {
+      const todayISO = getLocalDateISO ? getLocalDateISO() : this.getDateFromISO(new Date().toISOString());
       const { startISO, endISO } = this.getBeijingDayBounds();
 
-      const [todayRes, totalRes] = await Promise.all([
+      const [todaySessionsRes, totalSessionsRes, todayTasksRes, totalTasksRes] = await Promise.all([
         this.supabase
-          .from("study_activity_entries")
+          .from("study_sessions")
           .select("duration_minutes")
           .eq("user_id", currentUser.id)
-          .gte("activity_at", startISO)
-          .lt("activity_at", endISO),
+          .gte("ended_at", startISO)
+          .lt("ended_at", endISO),
         this.supabase
-          .from("study_activity_entries")
-          .select("duration_minutes, activity_at", { count: "exact" })
+          .from("study_sessions")
+          .select("duration_minutes", { count: "exact" })
+          .eq("user_id", currentUser.id),
+        this.supabase
+          .from("tasks")
+          .select("duration_minutes")
           .eq("user_id", currentUser.id)
+          .eq("done", true)
+          .eq("task_date", todayISO),
+        this.supabase
+          .from("tasks")
+          .select("duration_minutes", { count: "exact" })
+          .eq("user_id", currentUser.id)
+          .eq("done", true)
       ]);
 
-      if (todayRes.error) throw todayRes.error;
-      if (totalRes.error) throw totalRes.error;
+      if (todaySessionsRes.error) throw todaySessionsRes.error;
+      if (totalSessionsRes.error) throw totalSessionsRes.error;
+      if (todayTasksRes.error) throw todayTasksRes.error;
+      if (totalTasksRes.error) throw totalTasksRes.error;
 
-      const today = (todayRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
-      const total = (totalRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const todaySessionMinutes = (todaySessionsRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const totalSessionMinutes = (totalSessionsRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const todayTaskMinutes = (todayTasksRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const totalTaskMinutes = (totalTasksRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
 
       return {
         success: true,
-        today,
-        total,
-        sessionCount: totalRes.count || 0
+        today: todaySessionMinutes + todayTaskMinutes,
+        total: totalSessionMinutes + totalTaskMinutes,
+        sessionCount: (totalSessionsRes.count || 0) + (totalTasksRes.count || 0)
       };
     } catch (err) {
       console.error("loadStats error:", err);
@@ -405,34 +432,56 @@ export class Timer {
 
     try {
       let startDate = null;
+      let startISO = null;
 
       if (range === "today") {
-        startDate = this.getBeijingRollingStartISO(1);
+        startISO = this.getBeijingRollingStartISO(1);
       } else if (range === "week") {
-        startDate = this.getBeijingRollingStartISO(7);
+        startISO = this.getBeijingRollingStartISO(7);
       } else if (range === "month") {
-        startDate = this.getBeijingRollingStartISO(30);
+        startISO = this.getBeijingRollingStartISO(30);
       }
 
-        let query = this.supabase
-        .from("study_activity_entries")
-        .select("duration_minutes, subject, activity_at")
-        .eq("user_id", currentUser.id);
-
-      if (startDate) {
-        query = query.gte("activity_at", startDate);
+      if (startISO) {
+        startDate = this.getDateFromISO(startISO);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
+      const [sessionsRes, tasksRes] = await Promise.all([
+        (() => {
+          let query = this.supabase
+            .from("study_sessions")
+            .select("duration_minutes, subject, ended_at")
+            .eq("user_id", currentUser.id);
+          if (startISO) query = query.gte("ended_at", startISO);
+          return query;
+        })(),
+        (() => {
+          let query = this.supabase
+            .from("tasks")
+            .select("duration_minutes, task_date")
+            .eq("user_id", currentUser.id)
+            .eq("done", true);
+          if (startDate) query = query.gte("task_date", startDate);
+          return query;
+        })()
+      ]);
+
+      if (sessionsRes.error) throw sessionsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
 
       const subjectMap = new Map();
       let totalMinutes = 0;
 
-      (data || []).forEach(session => {
+      (sessionsRes.data || []).forEach(session => {
         const subject = session.subject || "未分类";
         const mins = Number(session.duration_minutes || 0);
         subjectMap.set(subject, (subjectMap.get(subject) || 0) + mins);
+        totalMinutes += mins;
+      });
+
+      (tasksRes.data || []).forEach(task => {
+        const mins = Number(task.duration_minutes || 0);
+        subjectMap.set("任务补记", (subjectMap.get("任务补记") || 0) + mins);
         totalMinutes += mins;
       });
 
@@ -501,15 +550,46 @@ export class Timer {
     }
 
     try {
-        const { data, error } = await this.supabase
-        .from("study_activity_entries")
-        .select("duration_minutes, activity_at, activity_date, subject, activity_type")
-        .eq("user_id", currentUser.id)
-        .order("activity_at", { ascending: false })
-        .limit(50);
+      const [sessionsRes, tasksRes] = await Promise.all([
+        this.supabase
+          .from("study_sessions")
+          .select("duration_minutes, ended_at, subject")
+          .eq("user_id", currentUser.id)
+          .order("ended_at", { ascending: false })
+          .limit(50),
+        this.supabase
+          .from("tasks")
+          .select("duration_minutes, task_date, text, created_at")
+          .eq("user_id", currentUser.id)
+          .eq("done", true)
+          .order("task_date", { ascending: false })
+          .limit(50)
+      ]);
 
-      if (error) throw error;
-      return { success: true, data: data || [] };
+      if (sessionsRes.error) throw sessionsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
+
+      const sessionRows = (sessionsRes.data || []).map(row => ({
+        duration_minutes: row.duration_minutes,
+        activity_at: row.ended_at,
+        activity_date: null,
+        subject: row.subject,
+        activity_type: "session"
+      }));
+
+      const taskRows = (tasksRes.data || []).map(row => ({
+        duration_minutes: row.duration_minutes,
+        activity_at: row.created_at || `${row.task_date}T00:00:00+08:00`,
+        activity_date: row.task_date,
+        subject: "任务补记",
+        activity_type: "task"
+      }));
+
+      const data = [...sessionRows, ...taskRows]
+        .sort((a, b) => new Date(b.activity_at).getTime() - new Date(a.activity_at).getTime())
+        .slice(0, 50);
+
+      return { success: true, data };
     } catch (err) {
       console.error("loadHistory error:", err);
       return { success: false, data: [] };
