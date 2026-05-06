@@ -66,25 +66,16 @@ function parseDraft(text: string): ReviewDraft {
   }
 }
 
-function extractResponsesText(data: any): string {
+function extractChatText(data: any): string {
   if (!data) return "";
-  if (typeof data.output_text === "string" && data.output_text.trim()) return data.output_text;
-  if (Array.isArray(data.output)) {
-    const pieces: string[] = [];
-    for (const item of data.output) {
-      if (!item || !Array.isArray(item.content)) continue;
-      for (const content of item.content) {
-        if (content && typeof content.text === "string") {
-          pieces.push(content.text);
-        }
-      }
-    }
-    return pieces.join("\n").trim();
-  }
+  const choices = data.choices;
+  if (!Array.isArray(choices) || !choices.length) return "";
+  const msg = choices[0].message;
+  if (msg && typeof msg.content === "string") return msg.content.trim();
   return "";
 }
 
-function buildPrompt(payload: any) {
+function buildMessages(payload: any) {
   const reviewText = String(payload?.reviewText || "").trim();
   const date = String(payload?.date || "").trim();
   const displayName = String(payload?.displayName || "学习者").trim();
@@ -93,7 +84,7 @@ function buildPrompt(payload: any) {
   const taskStats = payload?.taskStats || {};
   const tasks = Array.isArray(payload?.tasks) ? payload.tasks.slice(0, 12) : [];
 
-  return [
+  const system = [
     "你是一个学习复盘助手，服务于自习室应用。",
     "请把用户的原始笔记整理成简洁、结构化的中文复盘。",
     "只输出合法 JSON，不要输出 markdown、不要输出代码块、不要加解释文字。",
@@ -106,7 +97,9 @@ function buildPrompt(payload: any) {
     "- nextSteps: 1 到 3 条，写明天可以立刻执行的动作",
     "- mood: 一句话描述今天状态",
     "不要编造用户没有提到的具体学习内容；如果信息很少，就基于现有上下文做温和整理，并明确保持克制。",
-    "",
+  ].join("\n");
+
+  const user = [
     `日期：${date || "未知"}`,
     `用户：${displayName}`,
     `今日专注：${todayMinutes} 分钟`,
@@ -117,6 +110,8 @@ function buildPrompt(payload: any) {
     "原始笔记：",
     reviewText || "（空）",
   ].join("\n");
+
+  return { system, user };
 }
 
 Deno.serve(async (req) => {
@@ -131,15 +126,15 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const aiApiKey = Deno.env.get("XAI_API_KEY") || Deno.env.get("OPENAI_API_KEY");
-    const baseUrl = Deno.env.get("XAI_BASE_URL") || "https://api-xai.ainaibahub.com";
-    const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("XAI_MODEL") || "gpt-5.4-mini";
+    const apiKey = Deno.env.get("DEEPSEEK_API_KEY");
+    const baseUrl = Deno.env.get("DEEPSEEK_BASE_URL") || "https://api.deepseek.com";
+    const model = Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat";
 
     if (!supabaseUrl || !supabaseAnonKey) {
       throw new Error("Supabase environment variables are missing.");
     }
-    if (!aiApiKey) {
-      throw new Error("XAI_API_KEY is missing.");
+    if (!apiKey) {
+      throw new Error("DEEPSEEK_API_KEY is missing. Set it in Supabase Edge Function environment variables.");
     }
 
     const authHeader = req.headers.get("Authorization") || "";
@@ -157,31 +152,34 @@ Deno.serve(async (req) => {
     }
 
     const payload = await req.json().catch(() => ({}));
-    const prompt = buildPrompt(payload);
+    const { system, user } = buildMessages(payload);
 
-    const aiResponse = await fetch(`${baseUrl}/v1/responses`, {
+    const aiResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${aiApiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
-        input: prompt,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
         temperature: 0.2,
-        max_output_tokens: 900,
+        max_tokens: 900,
       }),
     });
 
     if (!aiResponse.ok) {
       const detail = await aiResponse.text();
-      throw new Error(`AI request failed: ${aiResponse.status} ${detail}`);
+      throw new Error(`DeepSeek API error: ${aiResponse.status} ${detail}`);
     }
 
     const aiData = await aiResponse.json();
-    const outputText = extractResponsesText(aiData);
+    const outputText = extractChatText(aiData);
     if (!outputText) {
-      throw new Error("AI did not return any text.");
+      throw new Error("DeepSeek returned empty response.");
     }
 
     const draft = parseDraft(outputText);

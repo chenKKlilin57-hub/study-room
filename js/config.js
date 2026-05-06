@@ -30,6 +30,6 @@ export const AI_CONFIG = {
   // Supabase Edge Function 名称
   REVIEW_SUMMARY_FUNCTION: "review-summarize",
 
-  // 默认模型，可在函数端覆盖
-  REVIEW_SUMMARY_MODEL: "gpt-5.4-mini"
+  // 默认模型，可在函数端通过 DEEPSEEK_MODEL 环境变量覆盖
+  REVIEW_SUMMARY_MODEL: "deepseek-chat"
 };
