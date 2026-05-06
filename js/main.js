@@ -1279,12 +1279,14 @@ function closeReviewAiPanel() {
 function collectReviewContext() {
   const reviewInput = document.getElementById("reviewInput");
   const reviewText = reviewInput ? reviewInput.innerText.trim() : "";
-  const tasks = taskManager.getCurrentTasks().filter(task => !task.parent_id).slice(0, 12).map(task => ({
-    text: task.text,
-    done: Boolean(task.done),
-    durationMinutes: Number(task.duration_minutes || 0),
-    priority: task.priority || "medium"
-  }));
+  const allTasks = taskManager.getCurrentTasks()
+    .filter(task => !task.parent_id)
+    .map(task => ({
+      text: task.text,
+      done: Boolean(task.done),
+      durationMinutes: Number(task.duration_minutes || 0),
+      priority: task.priority || "medium"
+    }));
 
   return {
     date: selectedTaskDate || getLocalDateISO(),
@@ -1292,7 +1294,8 @@ function collectReviewContext() {
     todayMinutes: currentTodayMinutes,
     dailyGoal,
     taskStats: taskManager.getTaskStats(),
-    tasks,
+    completedTasks: allTasks.filter(t => t.done).slice(0, 8),
+    pendingTasks: allTasks.filter(t => !t.done).slice(0, 8),
     reviewText
   };
 }
@@ -1372,10 +1375,20 @@ function renderReviewAiPreview(draft) {
   }
 
   el.reviewAiPreview.innerHTML = `
-    <div style="font-size:14px;font-weight:700;color:var(--text);">${esc(draft.title || "今日复盘")}</div>
+    <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">${esc(draft.title || "今日复盘")}</div>
     ${sections.join("") || '<div style="color:var(--muted);">这次生成结果比较简短，可以再点一次 AI 整理或补充几句笔记。</div>'}
+    <div style="display:flex;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+      <button id="refineRetryBtn" class="btn ghost" style="padding:5px 12px;font-size:12px;">重试</button>
+      <button id="refineShorterBtn" class="btn ghost" style="padding:5px 12px;font-size:12px;">精简</button>
+    </div>
   `;
   el.reviewAiResult.style.display = "block";
+
+  // 绑定迭代按钮
+  const retryBtn = document.getElementById("refineRetryBtn");
+  const shorterBtn = document.getElementById("refineShorterBtn");
+  if (retryBtn) retryBtn.addEventListener("click", () => refineReviewAiDraft("请重新生成一次"));
+  if (shorterBtn) shorterBtn.addEventListener("click", () => refineReviewAiDraft("请精简至一半长度，保留核心内容"));
 }
 
 function buildReviewAiHtml(draft) {
@@ -1400,6 +1413,41 @@ function buildReviewAiHtml(draft) {
     blocks.push(`<h4>状态</h4><p>${esc(draft.mood)}</p>`);
   }
   return `<div class="ai-review-draft">${blocks.join("")}</div>`;
+}
+
+async function refineReviewAiDraft(instruction) {
+  if (reviewAiBusy) return;
+  if (!reviewAiDraft) {
+    showMessage("先生成一版 AI 复盘。", "error");
+    return;
+  }
+
+  reviewAiBusy = true;
+  setReviewAiStatus("AI 正在处理中…");
+
+  try {
+    const payload = collectReviewContext();
+    payload.action = "refine";
+    payload.prevOutput = JSON.stringify(reviewAiDraft);
+    payload.refineInstruction = instruction;
+
+    const { data, error } = await supabase.functions.invoke(AI_CONFIG.REVIEW_SUMMARY_FUNCTION, {
+      body: payload
+    });
+
+    if (error) throw error;
+
+    const normalized = normalizeReviewAiDraft(data && data.data ? data.data : data);
+    reviewAiDraft = normalized;
+    renderReviewAiPreview(normalized);
+    setReviewAiStatus("已完成。", "ok");
+  } catch (err) {
+    console.error("refineReviewAiDraft error:", err);
+    setReviewAiStatus("处理失败，请稍后再试。", "error");
+    showMessage("AI 处理失败，请稍后再试。", "error");
+  } finally {
+    reviewAiBusy = false;
+  }
 }
 
 async function generateReviewAiDraft() {
@@ -1454,11 +1502,25 @@ function applyReviewAiDraft() {
   const reviewInput = document.getElementById("reviewInput");
   if (!reviewInput) return;
 
-  reviewInput.innerHTML = buildReviewAiHtml(reviewAiDraft);
+  const aiHtml = buildReviewAiHtml(reviewAiDraft);
+  const marker = "<!-- ai-block -->";
+  const endMarker = "<!-- /ai-block -->";
+  const current = reviewInput.innerHTML;
+
+  if (current.includes(marker)) {
+    // 替换已有 AI 区块
+    const start = current.indexOf(marker);
+    const end = current.indexOf(endMarker, start);
+    reviewInput.innerHTML = current.slice(0, start) + marker + "\n" + aiHtml + "\n" + endMarker + current.slice(end + endMarker.length);
+  } else {
+    // 追加到末尾
+    reviewInput.innerHTML = current + "\n" + marker + "\n" + aiHtml + "\n" + endMarker;
+  }
+
   reviewDirty = true;
   scheduleReviewAutoSave();
   resetReviewAiPanel();
-  setReviewAiStatus("已写回笔记，可继续手动调整。", "ok");
+  setReviewAiStatus("AI 复盘已追加到笔记末尾，可继续手动调整。", "ok");
   showMessage("结构化复盘已写回笔记。", "ok");
 }
 

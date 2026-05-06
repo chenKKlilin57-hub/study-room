@@ -75,14 +75,25 @@ function extractChatText(data: any): string {
   return "";
 }
 
-function buildMessages(payload: any) {
+function buildMessages(payload: any, action: string) {
   const reviewText = String(payload?.reviewText || "").trim();
   const date = String(payload?.date || "").trim();
   const displayName = String(payload?.displayName || "学习者").trim();
   const todayMinutes = Number(payload?.todayMinutes || 0);
   const dailyGoal = Number(payload?.dailyGoal || 240);
   const taskStats = payload?.taskStats || {};
-  const tasks = Array.isArray(payload?.tasks) ? payload.tasks.slice(0, 12) : [];
+  const completedTasks = Array.isArray(payload?.completedTasks) ? payload.completedTasks : [];
+  const pendingTasks = Array.isArray(payload?.pendingTasks) ? payload.pendingTasks : [];
+
+  if (action === "refine") {
+    const prevOutput = String(payload?.prevOutput || "").trim();
+    const refineInstruction = String(payload?.refineInstruction || "请精简").trim();
+
+    return {
+      system: "你是一个学习复盘助手。请根据用户的补充要求，修改之前生成的结构化复盘。只输出合法 JSON，字段仍然是 title, summary, highlights, issues, nextSteps, mood。",
+      user: `之前的复盘：\n${prevOutput}\n\n修改要求：${refineInstruction}`
+    };
+  }
 
   const system = [
     "你是一个学习复盘助手，服务于自习室应用。",
@@ -99,13 +110,24 @@ function buildMessages(payload: any) {
     "不要编造用户没有提到的具体学习内容；如果信息很少，就基于现有上下文做温和整理，并明确保持克制。",
   ].join("\n");
 
+  const doneLines = completedTasks.length
+    ? completedTasks.map((t: any) => `- ${t.text} (${t.durationMinutes}分钟)`).join("\n")
+    : "（无）";
+  const pendingLines = pendingTasks.length
+    ? pendingTasks.map((t: any) => `- ${t.text} (${t.durationMinutes}分钟)`).join("\n")
+    : "（无）";
+
   const user = [
     `日期：${date || "未知"}`,
     `用户：${displayName}`,
-    `今日专注：${todayMinutes} 分钟`,
-    `今日目标：${dailyGoal} 分钟`,
+    `今日专注：${todayMinutes} 分钟 / 目标 ${dailyGoal} 分钟（达成 ${dailyGoal > 0 ? Math.round(todayMinutes / dailyGoal * 100) : 0}%）`,
     `任务统计：${JSON.stringify(taskStats)}`,
-    `当前任务：${JSON.stringify(tasks)}`,
+    "",
+    "已完成任务：",
+    doneLines,
+    "",
+    "未完成任务：",
+    pendingLines,
     "",
     "原始笔记：",
     reviewText || "（空）",
@@ -152,7 +174,8 @@ Deno.serve(async (req) => {
     }
 
     const payload = await req.json().catch(() => ({}));
-    const { system, user } = buildMessages(payload);
+    const action = String(payload?.action || "generate").trim();
+    const { system, user } = buildMessages(payload, action);
 
     const aiResponse = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
