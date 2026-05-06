@@ -591,6 +591,12 @@ async function saveStudySession(minutes) {
   showMessage(result.message || (result.success ? `已记录 ${minutes} 分钟` : "记录失败"), result.success ? "ok" : "error");
 
   if (result.success) {
+    // 关联任务的时长已由 session 记录，清零避免重复统计
+    if (linkedId) {
+      await supabase.from("tasks").update({ duration_minutes: 0 }).eq("id", linkedId);
+      lastLinkedTaskId = null;
+    }
+
     await loadMyStats();
     await loadHistory();
     await loadLeaderboard();
@@ -751,39 +757,23 @@ async function loadWeeklyChart() {
   const endISO   = new Date(new Date(days[6] + "T23:59:59Z").getTime() - BJOffset).toISOString();
 
   try {
-    const [sessionsRes, tasksRes] = await Promise.all([
-      supabase
-        .from("study_sessions")
-        .select("ended_at, duration_minutes")
-        .eq("user_id", user.id)
-        .gte("ended_at", startISO)
-        .lte("ended_at", endISO),
-      supabase
-        .from("tasks")
-        .select("task_date, duration_minutes")
-        .eq("user_id", user.id)
-        .eq("done", true)
-        .gte("task_date", days[0])
-        .lte("task_date", days[6])
-    ]);
+    const { data, error } = await supabase
+      .from("study_activity_entries")
+      .select("duration_minutes, activity_at")
+      .eq("user_id", user.id)
+      .gte("activity_at", startISO)
+      .lte("activity_at", endISO);
 
-    if (sessionsRes.error) throw sessionsRes.error;
-    if (tasksRes.error) throw tasksRes.error;
+    if (error) throw error;
 
     const minutesByDay = {};
     days.forEach(d => { minutesByDay[d] = 0; });
-    (sessionsRes.data || []).forEach(row => {
-      if (!row.ended_at) return;
-      const bjDate = getBeijingDate(new Date(row.ended_at));
+    (data || []).forEach(row => {
+      if (!row.activity_at) return;
+      const bjDate = getBeijingDate(new Date(row.activity_at));
       const dayKey = `${bjDate.getUTCFullYear()}-${String(bjDate.getUTCMonth()+1).padStart(2,"0")}-${String(bjDate.getUTCDate()).padStart(2,"0")}`;
       if (minutesByDay[dayKey] !== undefined) {
         minutesByDay[dayKey] += row.duration_minutes || 0;
-      }
-    });
-
-    (tasksRes.data || []).forEach(row => {
-      if (minutesByDay[row.task_date] !== undefined) {
-        minutesByDay[row.task_date] += row.duration_minutes || 0;
       }
     });
 

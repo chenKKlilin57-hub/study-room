@@ -380,7 +380,7 @@ export class Timer {
     }
   }
 
-  // 加载统计数据
+  // 加载统计数据（统一使用 study_activity_entries 视图）
   async loadStats(getLocalDateISO) {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser) {
@@ -388,48 +388,32 @@ export class Timer {
     }
 
     try {
-      const todayISO = getLocalDateISO ? getLocalDateISO() : this.getDateFromISO(new Date().toISOString());
       const { startISO, endISO } = this.getBeijingDayBounds();
 
-      const [todaySessionsRes, totalSessionsRes, todayTasksRes, totalTasksRes] = await Promise.all([
+      const [todayRes, totalRes] = await Promise.all([
         this.supabase
-          .from("study_sessions")
+          .from("study_activity_entries")
           .select("duration_minutes")
           .eq("user_id", currentUser.id)
-          .gte("ended_at", startISO)
-          .lt("ended_at", endISO),
+          .gte("activity_at", startISO)
+          .lt("activity_at", endISO),
         this.supabase
-          .from("study_sessions")
-          .select("duration_minutes", { count: "exact" })
-          .eq("user_id", currentUser.id),
-        this.supabase
-          .from("tasks")
-          .select("duration_minutes")
-          .eq("user_id", currentUser.id)
-          .eq("done", true)
-          .eq("task_date", todayISO),
-        this.supabase
-          .from("tasks")
+          .from("study_activity_entries")
           .select("duration_minutes", { count: "exact" })
           .eq("user_id", currentUser.id)
-          .eq("done", true)
       ]);
 
-      if (todaySessionsRes.error) throw todaySessionsRes.error;
-      if (totalSessionsRes.error) throw totalSessionsRes.error;
-      if (todayTasksRes.error) throw todayTasksRes.error;
-      if (totalTasksRes.error) throw totalTasksRes.error;
+      if (todayRes.error) throw todayRes.error;
+      if (totalRes.error) throw totalRes.error;
 
-      const todaySessionMinutes = (todaySessionsRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
-      const totalSessionMinutes = (totalSessionsRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
-      const todayTaskMinutes = (todayTasksRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
-      const totalTaskMinutes = (totalTasksRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const todayMinutes = (todayRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
+      const totalMinutes = (totalRes.data || []).reduce((s, x) => s + Number(x.duration_minutes || 0), 0);
 
       return {
         success: true,
-        today: todaySessionMinutes + todayTaskMinutes,
-        total: totalSessionMinutes + totalTaskMinutes,
-        sessionCount: (totalSessionsRes.count || 0) + (totalTasksRes.count || 0)
+        today: todayMinutes,
+        total: totalMinutes,
+        sessionCount: totalRes.count || 0
       };
     } catch (err) {
       console.error("loadStats error:", err);
@@ -438,6 +422,7 @@ export class Timer {
   }
 
   // 加载科目统计
+  // 加载科目统计（统一使用 study_activity_entries 视图，Top-8 + 其他）
   async loadSubjectStats(range = "today") {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser) {
@@ -445,7 +430,6 @@ export class Timer {
     }
 
     try {
-      let startDate = null;
       let startISO = null;
 
       if (range === "today") {
@@ -458,57 +442,46 @@ export class Timer {
         startISO = this.getBeijingRollingStartISO(90);
       }
 
-      if (startISO) {
-        startDate = this.getDateFromISO(startISO);
-      }
+      let query = this.supabase
+        .from("study_activity_entries")
+        .select("duration_minutes, subject")
+        .eq("user_id", currentUser.id);
+      if (startISO) query = query.gte("activity_at", startISO);
 
-      const [sessionsRes, tasksRes] = await Promise.all([
-        (() => {
-          let query = this.supabase
-            .from("study_sessions")
-            .select("duration_minutes, subject, ended_at")
-            .eq("user_id", currentUser.id);
-          if (startISO) query = query.gte("ended_at", startISO);
-          return query;
-        })(),
-        (() => {
-          let query = this.supabase
-            .from("tasks")
-            .select("duration_minutes, task_date, text")
-            .eq("user_id", currentUser.id)
-            .eq("done", true);
-          if (startDate) query = query.gte("task_date", startDate);
-          return query;
-        })()
-      ]);
-
-      if (sessionsRes.error) throw sessionsRes.error;
-      if (tasksRes.error) throw tasksRes.error;
+      const { data, error } = await query;
+      if (error) throw error;
 
       const subjectMap = new Map();
       let totalMinutes = 0;
 
-      (sessionsRes.data || []).forEach(session => {
-        const subject = session.subject || "未分类";
-        const mins = Number(session.duration_minutes || 0);
+      (data || []).forEach(entry => {
+        const subject = entry.subject || "未分类";
+        const mins = Number(entry.duration_minutes || 0);
         subjectMap.set(subject, (subjectMap.get(subject) || 0) + mins);
         totalMinutes += mins;
       });
 
-      (tasksRes.data || []).forEach(task => {
-        const label = (task.text || "").trim() || "已完成任务";
-        const mins = Number(task.duration_minutes || 0);
-        subjectMap.set(label, (subjectMap.get(label) || 0) + mins);
-        totalMinutes += mins;
-      });
-
-      const subjects = Array.from(subjectMap.entries())
+      let subjects = Array.from(subjectMap.entries())
         .map(([name, minutes]) => ({
           name,
           minutes,
           percent: totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0
         }))
         .sort((a, b) => b.minutes - a.minutes);
+
+      // 超过 8 个科目时，前 7 个 + 其他
+      const MAX_VISIBLE = 7;
+      if (subjects.length > MAX_VISIBLE + 1) {
+        const top = subjects.slice(0, MAX_VISIBLE);
+        const rest = subjects.slice(MAX_VISIBLE);
+        const otherMinutes = rest.reduce((s, x) => s + x.minutes, 0);
+        top.push({
+          name: "其他",
+          minutes: otherMinutes,
+          percent: totalMinutes > 0 ? (otherMinutes / totalMinutes) * 100 : 0
+        });
+        subjects = top;
+      }
 
       return { success: true, subjects };
     } catch (err) {
@@ -559,7 +532,7 @@ export class Timer {
     }
   }
 
-  // 加载历史记录
+  // 加载历史记录（统一使用 study_activity_entries 视图）
   async loadHistory() {
     const currentUser = this.auth.getCurrentUser();
     if (!currentUser) {
@@ -567,46 +540,16 @@ export class Timer {
     }
 
     try {
-      const [sessionsRes, tasksRes] = await Promise.all([
-        this.supabase
-          .from("study_sessions")
-          .select("duration_minutes, ended_at, subject")
-          .eq("user_id", currentUser.id)
-          .order("ended_at", { ascending: false })
-          .limit(50),
-        this.supabase
-          .from("tasks")
-          .select("duration_minutes, task_date, text, created_at")
-          .eq("user_id", currentUser.id)
-          .eq("done", true)
-          .order("task_date", { ascending: false })
-          .limit(50)
-      ]);
+      const { data, error } = await this.supabase
+        .from("study_activity_entries")
+        .select("duration_minutes, subject, activity_at, activity_date, activity_type")
+        .eq("user_id", currentUser.id)
+        .order("activity_at", { ascending: false })
+        .limit(50);
 
-      if (sessionsRes.error) throw sessionsRes.error;
-      if (tasksRes.error) throw tasksRes.error;
+      if (error) throw error;
 
-      const sessionRows = (sessionsRes.data || []).map(row => ({
-        duration_minutes: row.duration_minutes,
-        activity_at: row.ended_at,
-        activity_date: null,
-        subject: row.subject,
-        activity_type: "session"
-      }));
-
-      const taskRows = (tasksRes.data || []).map(row => ({
-        duration_minutes: row.duration_minutes,
-        activity_at: row.created_at || `${row.task_date}T00:00:00+08:00`,
-        activity_date: row.task_date,
-        subject: (row.text || "").trim() || "已完成任务",
-        activity_type: "task"
-      }));
-
-      const data = [...sessionRows, ...taskRows]
-        .sort((a, b) => new Date(b.activity_at).getTime() - new Date(a.activity_at).getTime())
-        .slice(0, 50);
-
-      return { success: true, data };
+      return { success: true, data: data || [] };
     } catch (err) {
       console.error("loadHistory error:", err);
       return { success: false, data: [] };
